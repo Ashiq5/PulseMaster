@@ -75,9 +75,9 @@ def _load_key_map():
                     if '.key' in file:
                         lines = open(base_dir + 'zones/' + dirs + '/' + file).readlines()
                         if 'key-signing' in lines[0]:
-                            key_map['ksk-' + bucket_id] = file
+                            key_map['ksk-' + bucket_id] = file[:-4]
                         elif 'zone-signing' in lines[0]:
-                            key_map['zsk-' + bucket_id] = file
+                            key_map['zsk-' + bucket_id] = file[:-4]
         except Exception as e:
             continue
 
