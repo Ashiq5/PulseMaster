@@ -7,12 +7,12 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-# from PulseMaster.settings import LOCAL
+from PulseMaster.settings import LOCAL
 
-# if LOCAL:
-#     base_dir = '/home/ubuntu/standalones/bind-test/'
-# else:
-base_dir = '/etc/bind/'
+if LOCAL:
+    base_dir = '/home/ubuntu/standalones/bind-test/'
+else:
+    base_dir = '/etc/bind/'
 
 base_domain = 'cashcash.app'
 base_zone_fn = 'db.' + base_domain
@@ -48,6 +48,11 @@ def _return_zone_file_content(**kwargs):
     content += ";Name Servers\n"
     content += "      IN  NS  ns1." + zone_domain + ".\n"
     content += "      IN  NS  ns2." + zone_domain + ".\n"
+    content += "\n\n"
+
+    content += ";Name Server IPs\n"
+    content += "ns1           IN      A       " + sub_zone_ip + "\n"
+    content += "ns2           IN      A       " + sub_zone_ip + "\n"
     content += "\n\n"
 
     content += "; Other records\n"
@@ -184,7 +189,8 @@ class BindUpdateView(APIView):
             # 1. produce the signed zone file
             p = _execute_bash(
                 'dnssec-signzone -A -3 $(head -c 1000 /dev/random | sha1sum | cut -b 1-16) -N INCREMENT -o ' +
-                zone_domain + ' -e now+' + str(int(validity) * 60) + ' -k ' + key_map['ksk-' + bucket_id] + '.key'
+                zone_domain + ' -e now+' + str(int(validity) * 60) + ' -k ' + base_dir + 'zones/' + zone_domain + '/' +
+                key_map['ksk-' + bucket_id] + '.key'
                 + ' -t ' + base_dir + 'zones/' + zone_domain + '/' +
                 zone_fn + ' ' + base_dir + 'zones/' + zone_domain + '/' + key_map['zsk-' + bucket_id] + '.private'
             )
@@ -209,7 +215,7 @@ class BindUpdateView(APIView):
 
                 res = requests.get(url, headers=header)
                 if res.status_code != 200:
-                    # extract error string
+                    # TODO: extract error string
                     raise Exception("Base Zone modification resulted in error: ")
 
             # 3. load the signed zone in named.conf.local
@@ -219,7 +225,7 @@ class BindUpdateView(APIView):
             lines = local_bind_file.readlines()
             for ind, line in enumerate(lines):
                 if 'file "' + base_dir + 'zones/' + zone_domain + '/' + zone_fn + '' in line:
-                    x = '               file "' + base_dir + 'zones/' + zone_domain + '/' + signed_zone_fn + '";\n'
+                    x = '             file "' + base_dir + 'zones/' + zone_domain + '/' + signed_zone_fn + '";\n'
                     lines[ind] = x
             local_bind_file.close()
 
@@ -254,9 +260,9 @@ class UpdateBaseZoneFile(APIView):
             with open(base_dir + 'zones/' + base_zone_fn, 'a') as f2:
                 f2.write('\n')
                 ds_rr_value = ds_record.split('DS')[1].strip()
-                f2.write(bucket_id + '    IN      DS      ' + ds_rr_value + '\n')
-                f2.write(bucket_id + '    IN      NS      ns1.' + bucket_id + '.cashcash.app.\n')
-                f2.write(bucket_id + '    IN      NS      ns2.' + bucket_id + '.cashcash.app.\n')
+                f2.write(bucket_id + '       IN      DS      ' + ds_rr_value + '\n')
+                f2.write(bucket_id + '       IN      NS      ns1.' + bucket_id + '.cashcash.app.\n')
+                f2.write(bucket_id + '       IN      NS      ns2.' + bucket_id + '.cashcash.app.\n')
                 f2.write('ns1.' + bucket_id + '    IN      A      ' + sub_zone_ip + '\n')
                 f2.write('ns2.' + bucket_id + '    IN      A      ' + sub_zone_ip + '\n')
 
