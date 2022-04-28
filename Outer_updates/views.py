@@ -273,11 +273,12 @@ class BindUpdateView(APIView):
 
 class UpdateBaseZoneFile(APIView):
     def get(self, request):
-        kwargs = request.POST.dict()
+        kwargs = request.GET.dict()
         print(kwargs)
         bucket_id = kwargs['bucket_id']
         ds_record = kwargs['ds_record'].replace('%20', ' ').replace('%09', ' ')
-
+        print(bucket_id)
+        print(ds_record)
         try:
             os.system('cp ' + base_dir + 'zones/' + base_zone_fn + ' ' + base_dir + 'zones/' + base_zone_fn + '.bk')
             os.system(
