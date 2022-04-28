@@ -70,10 +70,10 @@ def _load_key_map():
     for dirs in os.listdir(base_dir + 'zones/'):
         try:
             bucket_id = dirs.split('.')[0]
-            if os.path.isdir(dirs):
+            if os.path.isdir(base_dir + 'zones/' + dirs + '/'):
                 for file in os.listdir(base_dir + 'zones/' + dirs + '/'):
                     if '.key' in file:
-                        lines = open(file).readlines()
+                        lines = open(base_dir + 'zones/' + dirs + '/' + file).readlines()
                         if 'key-signing' in lines[0]:
                             key_map['ksk-' + bucket_id] = file
                         elif 'zone-signing' in lines[0]:
