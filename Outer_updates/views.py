@@ -228,18 +228,17 @@ class BindUpdateView(APIView):
                 lines = f1.readlines()
                 ds_rr = lines[0].strip()
 
-                url = "http://" + base_zone_ip + ':8080/update-base-zone/'
-                # ?bucket-id=' + bucket_id + \
-                #       '&ds_record=' + ds_rr
+                url_for_post = "http://" + base_zone_ip + ':8080/update-base-zone/'
+                url_for_get = url_for_post + '?bucket-id=' + bucket_id + '&ds_record=' + ds_rr
                 header = {
                     "Content-Type": "application/json",
                 }
-                payload = {
-                    "bucket_id": bucket_id,
-                    "ds_record": ds_rr,
-                }
-                res = requests.post(url, data=payload, headers=header)
-                # res = requests.get(url, headers=header)
+                # payload = {
+                #     "bucket_id": bucket_id,
+                #     "ds_record": ds_rr,
+                # }
+                # res = requests.post(url_for_post, data=payload, headers=header)
+                res = requests.get(url_for_get, headers=header)
                 if res.status_code != 200:
                     # TODO: extract error string
                     raise Exception("Base Zone modification resulted in error: ")
@@ -273,11 +272,11 @@ class BindUpdateView(APIView):
 
 
 class UpdateBaseZoneFile(APIView):
-    def post(self, request):
+    def get(self, request):
         kwargs = request.POST.dict()
         print(kwargs)
         bucket_id = kwargs['bucket_id']
-        ds_record = kwargs['ds_record'].replace('%20', ' ').rep
+        ds_record = kwargs['ds_record'].replace('%20', ' ').replace('%09', ' ')
 
         try:
             os.system('cp ' + base_dir + 'zones/' + base_zone_fn + ' ' + base_dir + 'zones/' + base_zone_fn + '.bk')
