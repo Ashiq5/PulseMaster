@@ -19,6 +19,7 @@ from django.urls import path, include
 app_name = 'Outer_updates'
 from .views import BindUpdateView, BindInitView
 urlpatterns = [
+    path('update-base-zone/', UpdateBaseZoneFile.as_view(), name='update_base_zone'),
     path('update-bind/', BindUpdateView.as_view(), name='bind_update_api'),
     path('init-bind/', BindInitView.as_view(), name='bind_init_api'),
 ]
