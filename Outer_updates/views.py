@@ -7,12 +7,12 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from PulseMaster.settings import LOCAL
+# from PulseMaster.settings import LOCAL
 
-if LOCAL:
-    base_dir = '/home/ubuntu/standalones/bind-test/'
-else:
-    base_dir = '/etc/bind/'
+# if LOCAL:
+#     base_dir = '/home/ubuntu/standalones/bind-test/'
+# else:
+base_dir = '/etc/bind/'
 
 base_domain = 'cashcash.app'
 base_zone_fn = 'db.' + base_domain
