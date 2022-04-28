@@ -268,8 +268,8 @@ class UpdateBaseZoneFile(APIView):
 
                 # resign the base zone
                 p = _execute_bash("sudo dnssec-signzone -A -3 $(head -c 1000 /dev/random | sha1sum | cut -b 1-16) "
-                                   "-k /etc/bind/zones/Kcashcash.app.+007+48166.key -N INCREMENT -o cashcash.app  "
-                                   "-t /etc/bind/zones/db.cashcash.app /etc/bind/zones/Kcashcash.app.+007+53958.private")
+                                  "-k /etc/bind/zones/Kcashcash.app.+007+48166.key -N INCREMENT -o cashcash.app  "
+                                  "-t /etc/bind/zones/db.cashcash.app /etc/bind/zones/Kcashcash.app.+007+53958.private")
                 stdout = p.stdout.decode().split('\n') + p.stderr.decode().split('\n')
                 signed = False
                 for j in stdout:
