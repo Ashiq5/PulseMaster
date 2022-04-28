@@ -228,8 +228,9 @@ class BindUpdateView(APIView):
                 lines = f1.readlines()
                 ds_rr = lines[0].strip()
 
-                url = "http://" + base_zone_ip + ':8080/update-base-zone/?bucket-id=' + bucket_id + \
-                      '&ds_record=' + ds_rr
+                url = "http://" + base_zone_ip + ':8080/update-base-zone/'
+                # ?bucket-id=' + bucket_id + \
+                #       '&ds_record=' + ds_rr
                 header = {
                     "Content-Type": "application/json",
                 }
@@ -237,7 +238,7 @@ class BindUpdateView(APIView):
                     "bucket_id": bucket_id,
                     "ds_record": ds_rr,
                 }
-                res = requests.post(url, data=json.dumps(payload), headers=header)
+                res = requests.post(url, data=payload, headers=header)
                 # res = requests.get(url, headers=header)
                 if res.status_code != 200:
                     # TODO: extract error string
@@ -272,11 +273,11 @@ class BindUpdateView(APIView):
 
 
 class UpdateBaseZoneFile(APIView):
-    def get(self, request):
+    def post(self, request):
         kwargs = request.POST.dict()
         print(kwargs)
         bucket_id = kwargs['bucket_id']
-        ds_record = kwargs['ds_record']
+        ds_record = kwargs['ds_record'].replace('%20', ' ').rep
 
         try:
             os.system('cp ' + base_dir + 'zones/' + base_zone_fn + ' ' + base_dir + 'zones/' + base_zone_fn + '.bk')
