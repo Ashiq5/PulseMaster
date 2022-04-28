@@ -229,7 +229,7 @@ class BindUpdateView(APIView):
                 ds_rr = lines[0].strip()
 
                 url_for_post = "http://" + base_zone_ip + ':8080/update-base-zone/'
-                url_for_get = url_for_post + '?bucket-id=' + bucket_id + '&ds_record=' + ds_rr
+                url_for_get = url_for_post + '?bucket_id=' + bucket_id + '&ds_record=' + ds_rr
                 header = {
                     "Content-Type": "application/json",
                 }
