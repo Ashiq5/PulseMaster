@@ -297,6 +297,7 @@ class UpdateBaseZoneFile(APIView):
                                   "-k /etc/bind/zones/Kcashcash.app.+007+48166.key -N INCREMENT -o cashcash.app  "
                                   "-t /etc/bind/zones/db.cashcash.app /etc/bind/zones/Kcashcash.app.+007+53958.private")
                 stdout = p.stdout.decode().split('\n') + p.stderr.decode().split('\n')
+                print(p)
                 signed = False
                 for j in stdout:
                     if 'Zone fully signed:' in j:
