@@ -66,6 +66,22 @@ def _execute_bash(cmd):
     return subprocess.run(cmd, shell=True, capture_output=True)
 
 
+def _load_key_map():
+    for dirs in os.listdir(base_dir + 'zones/'):
+        try:
+            bucket_id = dirs.split('.')[0]
+            if os.path.isdir(dirs):
+                for file in os.listdir(base_dir + 'zones/' + dirs + '/'):
+                    if '.key' in file:
+                        lines = open(file).readlines()
+                        if 'key-signing' in lines[0]:
+                            key_map['ksk-' + bucket_id] = file
+                        elif 'zone-signing' in lines[0]:
+                            key_map['zsk-' + bucket_id] = file
+        except Exception as e:
+            continue
+
+
 class BindInitView(APIView):
     def get(self, request):
         """
@@ -174,13 +190,15 @@ class BindUpdateView(APIView):
         print(kwargs)
         validity = kwargs['signature_validity']
         bucket_id = kwargs['bucket_id']
-        ip = kwargs['ip']
+        # ip = kwargs['ip']
 
         """
         1. produce the signed zone file
         2. load the signed zone in named.conf.local
         3. reload
         """
+        _load_key_map()
+        print(key_map)
         flag = 1
         try:
             zone_domain = kwargs['bucket_id'] + '.' + base_domain
@@ -208,7 +226,7 @@ class BindUpdateView(APIView):
             with open('dsset-' + zone_domain + '.') as f1:
                 lines = f1.readlines()
                 ds_rr = lines[0].strip()
-                url = "https://" + base_zone_ip + ':8080/update-base-zone/?bucket-id=' + bucket_id + \
+                url = "http://" + base_zone_ip + ':8080/update-base-zone/?bucket-id=' + bucket_id + \
                       '&ds_record=' + ds_rr
                 header = {
                     "Content-Type": "application/json",
