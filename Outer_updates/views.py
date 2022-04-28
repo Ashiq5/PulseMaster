@@ -144,9 +144,6 @@ class BindInitView(APIView):
                 # os.system("rm " + base_dir + "named.conf.local.bk")
 
                 f.close()
-                # 5. reload bind
-                os.system('service bind9 reload')
-                return Response({'success': True}, status=status.HTTP_200_OK)
         except Exception as e:
             # revert all the steps done before
             print(e)
@@ -158,6 +155,10 @@ class BindInitView(APIView):
             # 5. reload bind
             os.system('service bind9 reload')
             return Response({'success': False, 'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        # 5. reload bind
+        os.system('service bind9 reload')
+        return Response({'success': True}, status=status.HTTP_200_OK)
 
 
 class BindUpdateView(APIView):
