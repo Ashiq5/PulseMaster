@@ -293,7 +293,7 @@ class UpdateBaseZoneFile(APIView):
                 f2.write('ns2.' + bucket_id + '    IN      A      ' + sub_zone_ip + '\n')
 
                 # resign the base zone
-                p = _execute_bash("sudo dnssec-signzone -A -3 $(head -c 1000 /dev/random | sha1sum | cut -b 1-16) "
+                p = _execute_bash("dnssec-signzone -A -3 $(head -c 1000 /dev/random | sha1sum | cut -b 1-16) "
                                   "-k /etc/bind/zones/Kcashcash.app.+007+48166.key -N INCREMENT -o cashcash.app  "
                                   "-t /etc/bind/zones/db.cashcash.app /etc/bind/zones/Kcashcash.app.+007+53958.private")
                 stdout = p.stdout.decode().split('\n') + p.stderr.decode().split('\n')
