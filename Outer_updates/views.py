@@ -1,3 +1,4 @@
+import json
 import os
 import pathlib
 import subprocess
@@ -226,13 +227,18 @@ class BindUpdateView(APIView):
             with open('dsset-' + zone_domain + '.') as f1:
                 lines = f1.readlines()
                 ds_rr = lines[0].strip()
+
                 url = "http://" + base_zone_ip + ':8080/update-base-zone/?bucket-id=' + bucket_id + \
                       '&ds_record=' + ds_rr
                 header = {
                     "Content-Type": "application/json",
                 }
-
-                res = requests.get(url, headers=header)
+                payload = {
+                    "bucket_id": bucket_id,
+                    "ds_record": ds_rr,
+                }
+                res = requests.post(url, data=json.dumps(payload), headers=header)
+                # res = requests.get(url, headers=header)
                 if res.status_code != 200:
                     # TODO: extract error string
                     raise Exception("Base Zone modification resulted in error: ")
@@ -267,7 +273,7 @@ class BindUpdateView(APIView):
 
 class UpdateBaseZoneFile(APIView):
     def get(self, request):
-        kwargs = request.GET.dict()
+        kwargs = request.POST.dict()
         print(kwargs)
         bucket_id = kwargs['bucket_id']
         ds_record = kwargs['ds_record']
