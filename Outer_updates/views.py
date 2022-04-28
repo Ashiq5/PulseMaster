@@ -291,6 +291,7 @@ class UpdateBaseZoneFile(APIView):
                 f2.write(bucket_id + '       IN      NS      ns2.' + bucket_id + '.cashcash.app.\n')
                 f2.write('ns1.' + bucket_id + '    IN      A      ' + sub_zone_ip + '\n')
                 f2.write('ns2.' + bucket_id + '    IN      A      ' + sub_zone_ip + '\n')
+                f2.close()
 
                 # resign the base zone
                 p = _execute_bash("dnssec-signzone -A -3 $(head -c 1000 /dev/random | sha1sum | cut -b 1-16) "
