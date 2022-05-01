@@ -17,11 +17,12 @@ from django.contrib import admin
 from django.urls import path, include
 
 app_name = 'Outer_updates'
-from .views import BindUpdateView, BindInitView, UpdateBaseZoneFile, RefreshBaseZoneFile, RefreshView
+from .views import SignASubZone, InitializeSubZones, UpdateBaseZone, RefreshBaseZone, Refresh
+
 urlpatterns = [
-    path('refresh/', RefreshView.as_view(), name='refresh'),
-    path('refresh-base-zone/', RefreshBaseZoneFile.as_view(), name='refresh_base_zone'),
-    path('update-base-zone/', UpdateBaseZoneFile.as_view(), name='update_base_zone'),
-    path('update-bind/', BindUpdateView.as_view(), name='bind_update_api'),
-    path('init-bind/', BindInitView.as_view(), name='bind_init_api'),
+    path('refresh/', Refresh.as_view(), name='refresh'),
+    path('refresh-base-zone/', RefreshBaseZone.as_view(), name='refresh_base_zone'),
+    path('update-base-zone/', UpdateBaseZone.as_view(), name='update_base_zone'),
+    path('sign-a-subzone/', SignASubZone.as_view(), name='sign_a_subzone'),
+    path('init-subzones/', InitializeSubZones.as_view(), name='init_subzones'),
 ]
