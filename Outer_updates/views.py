@@ -83,6 +83,22 @@ def _load_key_map():
             continue
 
 
+def _hard_refresh():
+    os.system("mv " + base_dir + "named.conf.local.basic " + base_dir + "named.conf.local")
+    for dirs in os.listdir(base_dir + 'zones/'):
+        try:
+            # bucket_id = dirs.split('.')[0]
+            if os.path.isdir(base_dir + 'zones/' + dirs + '/'):
+                print("rm -r " + base_dir + 'zones/' + dirs + '/')
+        except Exception as e:
+            continue
+
+
+def _reload_bind():
+    # os.system("rndc reload")
+    os.system("service bind9 reload")
+
+
 class BindInitView(APIView):
     def get(self, request):
         """
@@ -97,6 +113,9 @@ class BindInitView(APIView):
         ttl = kwargs['ttl']
         ip = kwargs['ip']
         buckets = kwargs['buckets']
+        offset = int(kwargs['offset'])
+
+        _hard_refresh()
 
         """
         1. create # zone files for # of buckets
@@ -109,7 +128,7 @@ class BindInitView(APIView):
         try:
             os.system('cp ' + base_dir + 'named.conf.local ' + base_dir + 'named.conf.local.bk')
             # 1. create # zone files for # of buckets
-            for i in range(1, int(buckets) + 1):
+            for i in range(1 + offset, int(buckets) + 1 + offset):
                 zone_domain = str(i) + '.' + base_domain
                 zone_fn = "db." + zone_domain
                 pathlib.Path(base_dir + 'zones/' + zone_domain).mkdir(parents=True, exist_ok=True)
@@ -170,11 +189,11 @@ class BindInitView(APIView):
                 if os.path.isdir(base_dir + 'zones/' + zone_domain):
                     os.system("rm -r " + base_dir + 'zones/' + zone_domain)
             # 5. reload bind
-            os.system('service bind9 reload')
+            _reload_bind()
             return Response({'success': False, 'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
         # 5. reload bind
-        os.system('service bind9 reload')
+        _reload_bind()
         return Response({'success': True}, status=status.HTTP_200_OK)
 
 
@@ -260,15 +279,21 @@ class BindUpdateView(APIView):
 
             # 4. reload
             flag = 4
-            os.system('service bind9 reload')
+            _reload_bind()
             return Response({'success': True}, status=status.HTTP_200_OK)
         except Exception as e:
             print(e)
             if flag == 3:
                 os.system("mv " + base_dir + "named.conf.local.bk " + base_dir + "named.conf.local")
             # 4. reload
-            os.system('service bind9 reload')
+            _reload_bind()
             return Response({'success': False, 'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class RefreshBaseZoneFile(APIView):
+    def get(self, request):
+        os.system('mv ' + base_dir + 'zones/' + base_zone_fn + ' ' + base_dir + 'zones/' + base_zone_fn + '.basic')
+        _reload_bind()
 
 
 class UpdateBaseZoneFile(APIView):
@@ -286,11 +311,11 @@ class UpdateBaseZoneFile(APIView):
             with open(base_dir + 'zones/' + base_zone_fn, 'a') as f2:
                 f2.write('\n')
                 ds_rr_value = ds_record.split('DS')[1].strip()
-                f2.write(bucket_id + '       IN      DS      ' + ds_rr_value + '\n')
-                f2.write(bucket_id + '       IN      NS      ns1.' + bucket_id + '.cashcash.app.\n')
-                f2.write(bucket_id + '       IN      NS      ns2.' + bucket_id + '.cashcash.app.\n')
-                f2.write('ns1.' + bucket_id + '    IN      A      ' + sub_zone_ip + '\n')
-                f2.write('ns2.' + bucket_id + '    IN      A      ' + sub_zone_ip + '\n')
+                f2.write(bucket_id + '       IN       DS      ' + ds_rr_value + '\n')
+                f2.write(bucket_id + '       IN       NS      ns1.' + bucket_id + '.cashcash.app.\n')
+                f2.write(bucket_id + '       IN       NS      ns2.' + bucket_id + '.cashcash.app.\n')
+                f2.write('ns1.' + bucket_id + '    IN      A       ' + sub_zone_ip + '\n')
+                f2.write('ns2.' + bucket_id + '    IN      A       ' + sub_zone_ip + '\n')
                 f2.close()
 
                 # resign the base zone
@@ -305,12 +330,12 @@ class UpdateBaseZoneFile(APIView):
                         signed = True
                 if not signed:
                     raise Exception("Signing resulted in failure: " + "\n".join(stdout))
-                os.system('service bind9 reload')
+                _reload_bind()
                 return Response({'success': True}, status=status.HTTP_200_OK)
         except Exception as e:
             print(e)
             os.system('mv ' + base_dir + 'zones/' + base_zone_fn + '.bk ' + base_dir + 'zones/' + base_zone_fn)
             os.system(
                 'mv ' + base_dir + 'zones/' + signed_base_zone_fn + '.bk ' + base_dir + 'zones/' + signed_base_zone_fn)
-            os.system('service bind9 reload')
+            _reload_bind()
             return Response({'success': False, 'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
