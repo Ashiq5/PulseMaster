@@ -57,7 +57,7 @@ def _return_zone_file_content(**kwargs):
     content += "\n\n"
 
     content += "; Other records\n"
-    content += "*" + "             IN      A       " + kwargs['wildcard_ip'] + "\n\n"
+    # content += "*" + "             IN      A       " + kwargs['wildcard_ip'] + "\n\n"
 
     return content
 
@@ -135,7 +135,7 @@ class InitializeSubZones(APIView):
         kwargs = request.GET.dict()
         print(kwargs)
         ttl = kwargs['ttl']
-        ip = kwargs['ip']
+        # ip = kwargs['ip']
         buckets = kwargs['buckets']
         offset = int(kwargs.get('offset', '0'))
 
@@ -159,7 +159,7 @@ class InitializeSubZones(APIView):
                 zone_file = _return_zone_file_content(serial=1, refresh=604800, retry=86400, expire=2419200,
                                                       negative_cache_ttl=604800, ttl=ttl,
                                                       ns1_ip=sub_zone_ip, ns2_ip=sub_zone_ip,
-                                                      bucket_id=i, wildcard_ip=ip, zone_domain=zone_domain)
+                                                      bucket_id=i, wildcard_ip="10.0.0.1", zone_domain=zone_domain)
                 f.write(zone_file)
 
                 # 2. run dnssec-keygen for zsk and ksk and save the name
@@ -235,12 +235,13 @@ class SignASubZone(APIView):
         print(kwargs)
         validity = kwargs['signature_validity']
         bucket_id = kwargs['bucket_id']
-        # ip = kwargs['ip']
+        ip = kwargs['ip']
 
         """
-        1. produce the signed zone file
-        2. load the signed zone in named.conf.local
-        3. reload
+        1. update the placeholder ip
+        2. produce the signed zone file
+        3. load the signed zone in named.conf.local
+        4. reload
         """
         _load_key_map()
         print(key_map)
@@ -250,7 +251,12 @@ class SignASubZone(APIView):
             zone_fn = "db." + zone_domain
             signed_zone_fn = zone_fn + ".signed"
 
-            # 1. produce the signed zone file
+            # 1. update the placeholder ip
+            f = open(base_dir + 'zones/' + zone_domain + '/' + zone_fn, 'a')
+            content = "*" + "             IN      A       " + ip + "\n\n"
+            f.write(content)
+
+            # 2. produce the signed zone file
             p = _execute_bash(
                 'dnssec-signzone -A -3 $(head -c 1000 /dev/random | sha1sum | cut -b 1-16) -N INCREMENT -o ' +
                 zone_domain + ' -e now+' + str(int(validity) * 60) + ' -k ' + base_dir + 'zones/' + zone_domain + '/' +
@@ -266,7 +272,7 @@ class SignASubZone(APIView):
             if not signed:
                 raise Exception("Signing resulted in failure: " + "\n".join(stdout))
 
-            # 2. upload dnskey as a ds record to the base zone and resign the base zone
+            # 3. upload dnskey as a ds record to the base zone and resign the base zone
             flag = 2
             with open('dsset-' + zone_domain + '.') as f1:
                 lines = f1.readlines()
@@ -287,7 +293,7 @@ class SignASubZone(APIView):
                     # TODO: extract error string
                     raise Exception("Base Zone modification resulted in error: ")
 
-            # 3. load the signed zone in named.conf.local
+            # 4. load the signed zone in named.conf.local
             flag = 3
             os.system('cp ' + base_dir + 'named.conf.local ' + base_dir + 'named.conf.local.bk')
             local_bind_file = open(base_dir + 'named.conf.local', 'r')
@@ -302,7 +308,7 @@ class SignASubZone(APIView):
             local_bind_file.write("".join(lines))
             local_bind_file.close()
 
-            # 4. reload
+            # 5. reload
             flag = 4
             _reload_bind()
             return Response({'success': True}, status=status.HTTP_200_OK)
@@ -310,7 +316,7 @@ class SignASubZone(APIView):
             print(e)
             if flag == 3:
                 os.system("mv " + base_dir + "named.conf.local.bk " + base_dir + "named.conf.local")
-            # 4. reload
+            # 5. reload
             _reload_bind()
             return Response({'success': False, 'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
