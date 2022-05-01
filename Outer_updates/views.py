@@ -84,15 +84,14 @@ def _load_key_map():
 
 
 def _hard_refresh():
-    print("mv " + base_dir + "named.conf.local.basic " + base_dir + "named.conf.local")
-    for dirs in os.listdir(base_dir + 'zones/'):
-        try:
-            # bucket_id = dirs.split('.')[0]
+    try:
+        os.system("cp " + base_dir + "named.conf.local.basic " + base_dir + "named.conf.local")
+        for dirs in os.listdir(base_dir + 'zones/'):
             if os.path.isdir(base_dir + 'zones/' + dirs + '/'):
-                print("rm -r " + base_dir + 'zones/' + dirs + '/')
-        except Exception as e:
-            raise e
-    _reload_bind()
+                os.system("rm -r " + base_dir + 'zones/' + dirs + '/')
+        _reload_bind()
+    except Exception as e:
+        raise e
 
 
 def _reload_bind():
@@ -100,25 +99,34 @@ def _reload_bind():
     os.system("service bind9 reload")
 
 
-class RefreshView(APIView):
+class Refresh(APIView):
     def get(self, request):
         if BASE_ZONE:
             return Response({'success': False, 'error': str("Should not be applied in the base zone")}, status=status.HTTP_400_BAD_REQUEST)
         try:
             _hard_refresh()
+            url = "http://" + base_zone_ip + ':8080/refresh-base-zone/'
+            header = {
+                "Content-Type": "application/json",
+            }
+            res = requests.get(url, headers=header)
+            if res.status_code != 200:
+                # TODO: extract error string
+                raise Exception("Base Zone refresh resulted in error: ")
             return Response({'success': True}, status=status.HTTP_200_OK)
         except Exception as e:
             print(e)
             return Response({'success': False, 'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
-class BindInitView(APIView):
+class InitializeSubZones(APIView):
     def get(self, request):
         """
             :param request:
             ttl: in minutes
             ip: placeholder
             buckets: int
+            offset: int
             :return:
             """
         if BASE_ZONE:
@@ -212,7 +220,7 @@ class BindInitView(APIView):
         return Response({'success': True}, status=status.HTTP_200_OK)
 
 
-class BindUpdateView(APIView):
+class SignASubZone(APIView):
     def get(self, request):
         """
             bucket_id: int
@@ -307,13 +315,13 @@ class BindUpdateView(APIView):
             return Response({'success': False, 'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
-class RefreshBaseZoneFile(APIView):
+class RefreshBaseZone(APIView):
     def get(self, request):
         if SUB_ZONE:
             return Response({'success': False, 'error': str("Should not be applied in the sub zone")},
                             status=status.HTTP_400_BAD_REQUEST)
         try:
-            os.system('mv ' + base_dir + 'zones/' + base_zone_fn + ' ' + base_dir + 'zones/' + base_zone_fn + '.basic')
+            print('cp ' + base_dir + 'zones/' + base_zone_fn + '.basic ' + base_dir + 'zones/' + base_zone_fn)
             _reload_bind()
             return Response({'success': True}, status=status.HTTP_200_OK)
         except Exception as e:
@@ -321,7 +329,7 @@ class RefreshBaseZoneFile(APIView):
             return Response({'success': False, 'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
-class UpdateBaseZoneFile(APIView):
+class UpdateBaseZone(APIView):
     def get(self, request):
         if SUB_ZONE:
             return Response({'success': False, 'error': str("Should not be applied in the sub zone")},
