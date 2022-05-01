@@ -8,7 +8,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from PulseMaster.settings import LOCAL
+from PulseMaster.settings import LOCAL, BASE_ZONE, SUB_ZONE
 
 if LOCAL:
     base_dir = '/home/ubuntu/standalones/bind-test/'
@@ -102,6 +102,8 @@ def _reload_bind():
 
 class RefreshView(APIView):
     def get(self, request):
+        if BASE_ZONE:
+            return Response({'success': False, 'error': str("Should not be applied in the base zone")}, status=status.HTTP_400_BAD_REQUEST)
         try:
             _hard_refresh()
             return Response({'success': True}, status=status.HTTP_200_OK)
@@ -119,6 +121,9 @@ class BindInitView(APIView):
             buckets: int
             :return:
             """
+        if BASE_ZONE:
+            return Response({'success': False, 'error': str("Should not be applied in the base zone")},
+                            status=status.HTTP_400_BAD_REQUEST)
         kwargs = request.GET.dict()
         print(kwargs)
         ttl = kwargs['ttl']
@@ -215,7 +220,9 @@ class BindUpdateView(APIView):
             signature_validity: in minutes
             :return:
             """
-
+        if BASE_ZONE:
+            return Response({'success': False, 'error': str("Should not be applied in the base zone")},
+                            status=status.HTTP_400_BAD_REQUEST)
         kwargs = request.GET.dict()
         print(kwargs)
         validity = kwargs['signature_validity']
@@ -302,12 +309,23 @@ class BindUpdateView(APIView):
 
 class RefreshBaseZoneFile(APIView):
     def get(self, request):
-        os.system('mv ' + base_dir + 'zones/' + base_zone_fn + ' ' + base_dir + 'zones/' + base_zone_fn + '.basic')
-        _reload_bind()
+        if SUB_ZONE:
+            return Response({'success': False, 'error': str("Should not be applied in the sub zone")},
+                            status=status.HTTP_400_BAD_REQUEST)
+        try:
+            os.system('mv ' + base_dir + 'zones/' + base_zone_fn + ' ' + base_dir + 'zones/' + base_zone_fn + '.basic')
+            _reload_bind()
+            return Response({'success': True}, status=status.HTTP_200_OK)
+        except Exception as e:
+            print(e)
+            return Response({'success': False, 'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class UpdateBaseZoneFile(APIView):
     def get(self, request):
+        if SUB_ZONE:
+            return Response({'success': False, 'error': str("Should not be applied in the sub zone")},
+                            status=status.HTTP_400_BAD_REQUEST)
         kwargs = request.GET.dict()
         print(kwargs)
         bucket_id = kwargs['bucket_id']
