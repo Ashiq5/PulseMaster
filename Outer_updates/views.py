@@ -91,12 +91,23 @@ def _hard_refresh():
             if os.path.isdir(base_dir + 'zones/' + dirs + '/'):
                 print("rm -r " + base_dir + 'zones/' + dirs + '/')
         except Exception as e:
-            continue
+            raise e
+    _reload_bind()
 
 
 def _reload_bind():
     # os.system("rndc reload")
     os.system("service bind9 reload")
+
+
+class RefreshView(APIView):
+    def get(self, request):
+        try:
+            _hard_refresh()
+            return Response({'success': True}, status=status.HTTP_200_OK)
+        except Exception as e:
+            print(e)
+            return Response({'success': False, 'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class BindInitView(APIView):
@@ -115,8 +126,6 @@ class BindInitView(APIView):
         buckets = kwargs['buckets']
         offset = int(kwargs['offset'])
 
-        _hard_refresh()
-
         """
         1. create # zone files for # of buckets
         2. run dnssec-keygen for zsk and ksk
@@ -126,6 +135,7 @@ class BindInitView(APIView):
         """
 
         try:
+            _hard_refresh()
             os.system('cp ' + base_dir + 'named.conf.local ' + base_dir + 'named.conf.local.bk')
             # 1. create # zone files for # of buckets
             for i in range(1 + offset, int(buckets) + 1 + offset):

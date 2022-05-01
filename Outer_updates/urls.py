@@ -17,8 +17,9 @@ from django.contrib import admin
 from django.urls import path, include
 
 app_name = 'Outer_updates'
-from .views import BindUpdateView, BindInitView, UpdateBaseZoneFile, RefreshBaseZoneFile
+from .views import BindUpdateView, BindInitView, UpdateBaseZoneFile, RefreshBaseZoneFile, RefreshView
 urlpatterns = [
+    path('refresh/', RefreshView.as_view(), name='refresh'),
     path('refresh-base-zone/', RefreshBaseZoneFile.as_view(), name='refresh_base_zone'),
     path('update-base-zone/', UpdateBaseZoneFile.as_view(), name='update_base_zone'),
     path('update-bind/', BindUpdateView.as_view(), name='bind_update_api'),
