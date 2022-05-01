@@ -137,7 +137,7 @@ class InitializeSubZones(APIView):
         ttl = kwargs['ttl']
         ip = kwargs['ip']
         buckets = kwargs['buckets']
-        offset = int(kwargs['offset'])
+        offset = int(kwargs.get('offset', '0'))
 
         """
         1. create # zone files for # of buckets
