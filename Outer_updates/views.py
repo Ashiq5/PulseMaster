@@ -84,7 +84,7 @@ def _load_key_map():
 
 
 def _hard_refresh():
-    os.system("mv " + base_dir + "named.conf.local.basic " + base_dir + "named.conf.local")
+    print("mv " + base_dir + "named.conf.local.basic " + base_dir + "named.conf.local")
     for dirs in os.listdir(base_dir + 'zones/'):
         try:
             # bucket_id = dirs.split('.')[0]
