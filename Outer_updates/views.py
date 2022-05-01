@@ -321,7 +321,7 @@ class RefreshBaseZone(APIView):
             return Response({'success': False, 'error': str("Should not be applied in the sub zone")},
                             status=status.HTTP_400_BAD_REQUEST)
         try:
-            print('cp ' + base_dir + 'zones/' + base_zone_fn + '.basic ' + base_dir + 'zones/' + base_zone_fn)
+            os.system('cp ' + base_dir + 'zones/' + base_zone_fn + '.basic ' + base_dir + 'zones/' + base_zone_fn)
             _reload_bind()
             return Response({'success': True}, status=status.HTTP_200_OK)
         except Exception as e:
