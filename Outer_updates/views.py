@@ -149,6 +149,14 @@ class InitializeSubZones(APIView):
 
         try:
             _hard_refresh()
+            url = "http://" + base_zone_ip + ':8080/refresh-base-zone/'
+            header = {
+                "Content-Type": "application/json",
+            }
+            res = requests.get(url, headers=header)
+            if res.status_code != 200:
+                # TODO: extract error string
+                raise Exception("Base Zone refresh resulted in error: ")
             os.system('cp ' + base_dir + 'named.conf.local ' + base_dir + 'named.conf.local.bk')
             # 1. create # zone files for # of buckets
             for i in range(1 + offset, int(buckets) + 1 + offset):
