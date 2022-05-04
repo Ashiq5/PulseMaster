@@ -277,6 +277,7 @@ class SignASubZone(APIView):
             for j in stdout:
                 if 'Zone fully signed:' in j:
                     signed = True
+            print(stdout)
             if not signed:
                 raise Exception("Signing resulted in failure: " + "\n".join(stdout))
 
