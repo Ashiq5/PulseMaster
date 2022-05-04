@@ -263,13 +263,13 @@ class SignASubZone(APIView):
             f = open(base_dir + 'zones/' + zone_domain + '/' + zone_fn)
             lines = f.readlines()
             found = False
-            x = "*" + "             IN      A       " + ip + "\n\n"
+            x = "*" + "             IN      A       " + ip
             for ind, line in enumerate(lines):
                 if "*" + "             IN      A       " in line:
                     lines[ind] = x
                     found = True
             if not found:
-                lines.append(x)
+                lines.append(x + "\n\n")
             f.close()
 
 
