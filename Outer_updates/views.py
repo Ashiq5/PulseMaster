@@ -263,6 +263,7 @@ class SignASubZone(APIView):
             f = open(base_dir + 'zones/' + zone_domain + '/' + zone_fn, 'a')
             content = "*" + "             IN      A       " + ip + "\n\n"
             f.write(content)
+            f.close()
 
             # 2. produce the signed zone file
             p = _execute_bash(
