@@ -262,11 +262,16 @@ class SignASubZone(APIView):
             # 1. update the placeholder ip
             f = open(base_dir + 'zones/' + zone_domain + '/' + zone_fn)
             lines = f.readlines()
+            found = False
+            x = "*" + "             IN      A       " + ip + "\n\n"
             for ind, line in enumerate(lines):
                 if "*" + "             IN      A       " in line:
-                    x = "*" + "             IN      A       " + ip + "\n\n"
                     lines[ind] = x
+                    found = True
+            if not found:
+                lines.append(x)
             f.close()
+
 
             f = open(base_dir + 'zones/' + zone_domain + '/' + zone_fn, 'w')
             f.write("".join(lines))
