@@ -376,10 +376,12 @@ class UpdateBaseZone(APIView):
             lines = f2.readlines()
             f2.close()
 
+            found = False
+            ds_rr_value = ds_record.split('DS')[1].strip()
             for ind, line in enumerate(lines):
                 if bucket_id + '       IN       DS      ' in line:
-                    ds_rr_value = ds_record.split('DS')[1].strip()
                     lines[ind] = bucket_id + '       IN       DS      ' + ds_rr_value + '\n'
+                    found = True
                 if bucket_id + '       IN       NS      ns1.' + bucket_id in line:
                     lines[ind] = bucket_id + '       IN       NS      ns1.' + bucket_id + '.cashcash.app.\n'
                 if bucket_id + '       IN       NS      ns2.' + bucket_id in line:
@@ -388,6 +390,13 @@ class UpdateBaseZone(APIView):
                     lines[ind] = 'ns1.' + bucket_id + '    IN      A       ' + sub_zone_ip + '\n'
                 if 'ns2.' + bucket_id + '    IN      A       ':
                     lines[ind] = 'ns2.' + bucket_id + '    IN      A       ' + sub_zone_ip + '\n'
+
+            if not found:
+                lines.append(bucket_id + '       IN       DS      ' + ds_rr_value + '\n')
+                lines.append(bucket_id + '       IN       NS      ns1.' + bucket_id + '.cashcash.app.\n')
+                lines.append(bucket_id + '       IN       NS      ns2.' + bucket_id + '.cashcash.app.\n')
+                lines.append('ns1.' + bucket_id + '    IN      A       ' + sub_zone_ip + '\n')
+                lines.append('ns2.' + bucket_id + '    IN      A       ' + sub_zone_ip + '\n')
 
             f2 = open(base_dir + 'zones/' + base_zone_fn, 'w')
             f2.write("".join(lines))
