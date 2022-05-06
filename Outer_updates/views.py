@@ -401,6 +401,7 @@ class UpdateBaseZone(APIView):
             f2 = open(base_dir + 'zones/' + base_zone_fn, 'w')
             f2.write("".join(lines))
             f2.close()
+            os.system('mv ' + base_dir + 'zones/' + base_zone_fn + base_dir + 'zones/' + base_zone_fn + '.test')
 
             # previous update code
             # f2.write('\n')
