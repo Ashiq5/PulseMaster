@@ -400,6 +400,7 @@ class UpdateBaseZone(APIView):
                 lines.append('ns1.' + bucket_id + '    IN      A       ' + sub_zone_ip + '\n')
                 lines.append('ns2.' + bucket_id + '    IN      A       ' + sub_zone_ip + '\n')
 
+            print(lines)
             f2 = open(base_dir + 'zones/' + base_zone_fn, 'w')
             f2.write("".join(lines))
             f2.close()
