@@ -385,12 +385,16 @@ class UpdateBaseZone(APIView):
                     found = True
                 if bucket_id + '       IN       NS      ns1.' + bucket_id in line:
                     lines[ind] = bucket_id + '       IN       NS      ns1.' + bucket_id + '.cashcash.app.\n'
+                    print('dfd')
                 if bucket_id + '       IN       NS      ns2.' + bucket_id in line:
                     lines[ind] = bucket_id + '       IN       NS      ns2.' + bucket_id + '.cashcash.app.\n'
+                    print('dfd1')
                 if 'ns1.' + bucket_id + '    IN      A       ':
                     lines[ind] = 'ns1.' + bucket_id + '    IN      A       ' + sub_zone_ip + '\n'
+                    print('df2')
                 if 'ns2.' + bucket_id + '    IN      A       ':
                     lines[ind] = 'ns2.' + bucket_id + '    IN      A       ' + sub_zone_ip + '\n'
+                    print('df4')
 
             print(found)
             if not found:
