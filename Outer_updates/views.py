@@ -44,7 +44,7 @@ def _return_zone_file_content(**kwargs):
     content += "            " + str(kwargs['refresh']) + "   ; Refresh\n"
     content += "            " + str(kwargs['retry']) + "   ; Retry\n"
     content += "            " + str(kwargs['expire']) + "   ; Expire\n"
-    content += "            " + str(kwargs['negative_cache_ttl']) + ")   ; Negative Cache TTL\n\n"
+    content += "            " + str(int(kwargs['ttl']) * 60) + ")   ; Negative Cache TTL\n\n"
 
     content += ";Name Servers\n"
     content += "      IN  NS  ns1." + zone_domain + ".\n"
@@ -271,7 +271,6 @@ class SignASubZone(APIView):
             if not found:
                 lines.append(x + "\n\n")
             f.close()
-
 
             f = open(base_dir + 'zones/' + zone_domain + '/' + zone_fn, 'w')
             f.write("".join(lines))
