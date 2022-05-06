@@ -263,7 +263,7 @@ class SignASubZone(APIView):
             f = open(base_dir + 'zones/' + zone_domain + '/' + zone_fn)
             lines = f.readlines()
             found = False
-            x = "*" + "             IN      A       " + ip
+            x = "*" + "             IN      A       " + ip + "\n"
             for ind, line in enumerate(lines):
                 if "*" + "             IN      A       " in line:
                     lines[ind] = x
@@ -371,30 +371,52 @@ class UpdateBaseZone(APIView):
             os.system('cp ' + base_dir + 'zones/' + base_zone_fn + ' ' + base_dir + 'zones/' + base_zone_fn + '.bk')
             os.system(
                 'cp ' + base_dir + 'zones/' + signed_base_zone_fn + ' ' + base_dir + 'zones/' + signed_base_zone_fn + '.bk')
-            with open(base_dir + 'zones/' + base_zone_fn, 'a') as f2:
-                f2.write('\n')
-                ds_rr_value = ds_record.split('DS')[1].strip()
-                f2.write(bucket_id + '       IN       DS      ' + ds_rr_value + '\n')
-                f2.write(bucket_id + '       IN       NS      ns1.' + bucket_id + '.cashcash.app.\n')
-                f2.write(bucket_id + '       IN       NS      ns2.' + bucket_id + '.cashcash.app.\n')
-                f2.write('ns1.' + bucket_id + '    IN      A       ' + sub_zone_ip + '\n')
-                f2.write('ns2.' + bucket_id + '    IN      A       ' + sub_zone_ip + '\n')
-                f2.close()
 
-                # resign the base zone
-                p = _execute_bash("dnssec-signzone -A -3 $(head -c 1000 /dev/random | sha1sum | cut -b 1-16) "
-                                  "-k /etc/bind/zones/Kcashcash.app.+007+48166.key -N INCREMENT -o cashcash.app  "
-                                  "-t /etc/bind/zones/db.cashcash.app /etc/bind/zones/Kcashcash.app.+007+53958.private")
-                stdout = p.stdout.decode().split('\n') + p.stderr.decode().split('\n')
-                print(p)
-                signed = False
-                for j in stdout:
-                    if 'Zone fully signed:' in j:
-                        signed = True
-                if not signed:
-                    raise Exception("Signing resulted in failure: " + "\n".join(stdout))
-                _reload_bind()
-                return Response({'success': True}, status=status.HTTP_200_OK)
+            f2 = open(base_dir + 'zones/' + base_zone_fn)
+            lines = f2.readlines()
+            f2.close()
+
+            for ind, line in enumerate(lines):
+                if bucket_id + '       IN       DS      ' in line:
+                    ds_rr_value = ds_record.split('DS')[1].strip()
+                    lines[ind] = bucket_id + '       IN       DS      ' + ds_rr_value + '\n'
+                if bucket_id + '       IN       NS      ns1.' + bucket_id in line:
+                    lines[ind] = bucket_id + '       IN       NS      ns1.' + bucket_id + '.cashcash.app.\n'
+                if bucket_id + '       IN       NS      ns2.' + bucket_id in line:
+                    lines[ind] = bucket_id + '       IN       NS      ns2.' + bucket_id + '.cashcash.app.\n'
+                if 'ns1.' + bucket_id + '    IN      A       ':
+                    lines[ind] = 'ns1.' + bucket_id + '    IN      A       ' + sub_zone_ip + '\n'
+                if 'ns2.' + bucket_id + '    IN      A       ':
+                    lines[ind] = 'ns2.' + bucket_id + '    IN      A       ' + sub_zone_ip + '\n'
+
+            f2 = open(base_dir + 'zones/' + base_zone_fn, 'w')
+            f2.write("".join(lines))
+            f2.close()
+
+            # previous update code
+            # f2.write('\n')
+            # ds_rr_value = ds_record.split('DS')[1].strip()
+            # f2.write(bucket_id + '       IN       DS      ' + ds_rr_value + '\n')
+            # f2.write(bucket_id + '       IN       NS      ns1.' + bucket_id + '.cashcash.app.\n')
+            # f2.write(bucket_id + '       IN       NS      ns2.' + bucket_id + '.cashcash.app.\n')
+            # f2.write('ns1.' + bucket_id + '    IN      A       ' + sub_zone_ip + '\n')
+            # f2.write('ns2.' + bucket_id + '    IN      A       ' + sub_zone_ip + '\n')
+            # f2.close()
+
+            # resign the base zone
+            p = _execute_bash("dnssec-signzone -A -3 $(head -c 1000 /dev/random | sha1sum | cut -b 1-16) "
+                              "-k /etc/bind/zones/Kcashcash.app.+007+48166.key -N INCREMENT -o cashcash.app  "
+                              "-t /etc/bind/zones/db.cashcash.app /etc/bind/zones/Kcashcash.app.+007+53958.private")
+            stdout = p.stdout.decode().split('\n') + p.stderr.decode().split('\n')
+            print(p)
+            signed = False
+            for j in stdout:
+                if 'Zone fully signed:' in j:
+                    signed = True
+            if not signed:
+                raise Exception("Signing resulted in failure: " + "\n".join(stdout))
+            _reload_bind()
+            return Response({'success': True}, status=status.HTTP_200_OK)
         except Exception as e:
             print(e)
             os.system('mv ' + base_dir + 'zones/' + base_zone_fn + '.bk ' + base_dir + 'zones/' + base_zone_fn)
