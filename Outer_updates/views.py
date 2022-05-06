@@ -375,6 +375,7 @@ class UpdateBaseZone(APIView):
             f2 = open(base_dir + 'zones/' + base_zone_fn)
             lines = f2.readlines()
             f2.close()
+            print(lines)
 
             found = False
             ds_rr_value = ds_record.split('DS')[1].strip()
