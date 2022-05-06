@@ -394,7 +394,9 @@ class UpdateBaseZone(APIView):
 
             print(found)
             if not found:
+                print('line-1', lines)
                 lines.append(bucket_id + '       IN       DS      ' + ds_rr_value + '\n')
+                print('line-2', lines)
                 lines.append(bucket_id + '       IN       NS      ns1.' + bucket_id + '.cashcash.app.\n')
                 lines.append(bucket_id + '       IN       NS      ns2.' + bucket_id + '.cashcash.app.\n')
                 lines.append('ns1.' + bucket_id + '    IN      A       ' + sub_zone_ip + '\n')
