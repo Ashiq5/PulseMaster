@@ -21,14 +21,14 @@ signed_base_zone_fn = base_zone_fn + '.signed'
 base_zone_ip = "54.92.207.5"
 sub_zone_ip = "3.237.179.78"
 key_map = {}
-
-# TODOs:
-"""
-1. test with dig and dnsviz that everything is alright if no configuration breaks do happen
-2. if exception occurs, check whether the backup file is getting created and moved properly
-3. change os.system to subprocess.run
-4. add proper logging
-"""
+key_generation_commands_in_base_zone = {
+    "zsk": "dnssec-keygen -a RSASHA256 -b 2048 -K /etc/bind/zones/ -n ZONE cashcash.app",
+    "ksk": "sudo dnssec-keygen -f KSK -a RSASHA256 -b 4096 -K /etc/bind/zones/ -n ZONE cashcash.app"
+}
+base_zone_keys = {
+    "zsk": "/etc/bind/zones/Kcashcash.app.+008+61375",
+    "ksk": "/etc/bind/zones/Kcashcash.app.+008+41837"
+}
 
 
 def _return_zone_file_content(**kwargs):
@@ -135,7 +135,6 @@ class InitializeSubZones(APIView):
         kwargs = request.GET.dict()
         print(kwargs)
         ttl = kwargs['ttl']
-        # ip = kwargs['ip']
         buckets = kwargs['buckets']
         offset = int(kwargs.get('offset', '0'))
 
@@ -171,7 +170,7 @@ class InitializeSubZones(APIView):
                 f.write(zone_file)
 
                 # 2. run dnssec-keygen for zsk and ksk and save the name
-                p = _execute_bash("dnssec-keygen -a NSEC3RSASHA1 -b 2048" + " -K " + base_dir + 'zones/' +
+                p = _execute_bash("dnssec-keygen -a RSASHA256 -b 2048" + " -K " + base_dir + 'zones/' +
                                   zone_domain + '/' + " -n ZONE " + zone_domain)
                 stdout = p.stdout.decode().split('\n') + p.stderr.decode().split('\n')
                 found = False
@@ -182,7 +181,7 @@ class InitializeSubZones(APIView):
                 if not found:
                     raise Exception("ZS Key not created: " + "\n".join(stdout))
 
-                p = _execute_bash("dnssec-keygen -f KSK -a NSEC3RSASHA1 -b 4096" + " -K " + base_dir + 'zones/' +
+                p = _execute_bash("dnssec-keygen -f KSK -a RSASHA256 -b 4096" + " -K " + base_dir + 'zones/' +
                                   zone_domain + '/' + " -n ZONE " + zone_domain)
                 stdout = p.stdout.decode().split('\n') + p.stderr.decode().split('\n')
                 found = False
@@ -197,6 +196,7 @@ class InitializeSubZones(APIView):
                 for key_file in os.listdir(base_dir + 'zones/' + zone_domain + '/'):
                     if '.key' in key_file and zone_domain in key_file:
                         f.write('$INCLUDE ' + base_dir + 'zones/' + zone_domain + '/' + key_file + "\n")
+                f.close()
 
                 # 4. update the zone in named.conf.local (unsigned version)
                 local_bind_file = open(base_dir + 'named.conf.local', 'a')
@@ -209,18 +209,10 @@ class InitializeSubZones(APIView):
 
                 # remove the backup file on success
                 # os.system("rm " + base_dir + "named.conf.local.bk")
-
-                f.close()
         except Exception as e:
             # revert all the steps done before
-            print(e)
-            os.system("mv " + base_dir + "named.conf.local.bk " + base_dir + "named.conf.local")
-            for i in range(1, int(buckets) + 1):
-                zone_domain = str(i) + '.' + base_domain
-                if os.path.isdir(base_dir + 'zones/' + zone_domain):
-                    os.system("rm -r " + base_dir + 'zones/' + zone_domain)
-            # 5. reload bind
-            _reload_bind()
+            print('Exception in init', e)
+            _hard_refresh()
             return Response({'success': False, 'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
         # 5. reload bind
@@ -240,7 +232,7 @@ class SignASubZone(APIView):
             return Response({'success': False, 'error': str("Should not be applied in the base zone")},
                             status=status.HTTP_400_BAD_REQUEST)
         kwargs = request.GET.dict()
-        print(kwargs)
+        print('KWARGS', kwargs)
         validity = kwargs['signature_validity']
         bucket_id = kwargs['bucket_id']
         ip = kwargs['ip']
@@ -252,7 +244,7 @@ class SignASubZone(APIView):
         4. reload
         """
         _load_key_map()
-        print(key_map)
+        print('Key Map', key_map)
         flag = 1
         try:
             zone_domain = kwargs['bucket_id'] + '.' + base_domain
@@ -278,10 +270,9 @@ class SignASubZone(APIView):
 
             # 2. produce the signed zone file
             p = _execute_bash(
-                'dnssec-signzone -A -3 $(head -c 1000 /dev/random | sha1sum | cut -b 1-16) -N INCREMENT -o ' +
-                zone_domain + ' -e now+' + str(int(validity) * 60) + ' -k ' + base_dir + 'zones/' + zone_domain + '/' +
-                key_map['ksk-' + bucket_id] + '.key'
-                + ' -t ' + base_dir + 'zones/' + zone_domain + '/' +
+                'dnssec-signzone -N INCREMENT -o ' + zone_domain + ' -e now+' +
+                str(int(validity) * 60) + ' -k ' + base_dir + 'zones/' + zone_domain + '/' +
+                key_map['ksk-' + bucket_id] + '.key' + ' -t ' + base_dir + 'zones/' + zone_domain + '/' +
                 zone_fn + ' ' + base_dir + 'zones/' + zone_domain + '/' + key_map['zsk-' + bucket_id] + '.private'
             )
             stdout = p.stdout.decode().split('\n') + p.stderr.decode().split('\n')
@@ -304,11 +295,6 @@ class SignASubZone(APIView):
                 header = {
                     "Content-Type": "application/json",
                 }
-                # payload = {
-                #     "bucket_id": bucket_id,
-                #     "ds_record": ds_rr,
-                # }
-                # res = requests.post(url_for_post, data=payload, headers=header)
                 res = requests.get(url_for_get, headers=header)
                 if res.status_code != 200:
                     # TODO: extract error string
@@ -321,7 +307,7 @@ class SignASubZone(APIView):
             lines = local_bind_file.readlines()
             for ind, line in enumerate(lines):
                 if 'file "' + base_dir + 'zones/' + zone_domain + '/' + zone_fn + '' in line:
-                    x = '             file "' + base_dir + 'zones/' + zone_domain + '/' + signed_zone_fn + '";\n'
+                    x = '               file "' + base_dir + 'zones/' + zone_domain + '/' + signed_zone_fn + '";\n'
                     lines[ind] = x
             local_bind_file.close()
 
@@ -349,6 +335,8 @@ class RefreshBaseZone(APIView):
                             status=status.HTTP_400_BAD_REQUEST)
         try:
             os.system('cp ' + base_dir + 'zones/' + base_zone_fn + '.basic ' + base_dir + 'zones/' + base_zone_fn)
+            os.system('cp ' + base_dir + 'zones/' + base_zone_fn + '.signed.basic ' +
+                      base_dir + 'zones/' + base_zone_fn + '.signed')
             _reload_bind()
             return Response({'success': True}, status=status.HTTP_200_OK)
         except Exception as e:
@@ -362,11 +350,9 @@ class UpdateBaseZone(APIView):
             return Response({'success': False, 'error': str("Should not be applied in the sub zone")},
                             status=status.HTTP_400_BAD_REQUEST)
         kwargs = request.GET.dict()
-        print(kwargs)
         bucket_id = kwargs['bucket_id']
         ds_record = kwargs['ds_record'].replace('%20', ' ').replace('%09', ' ')
-        print(bucket_id)
-        print(ds_record)
+        print("ds record", ds_record, "bucket_id", bucket_id)
         try:
             os.system('cp ' + base_dir + 'zones/' + base_zone_fn + ' ' + base_dir + 'zones/' + base_zone_fn + '.bk')
             os.system(
@@ -375,7 +361,6 @@ class UpdateBaseZone(APIView):
             f2 = open(base_dir + 'zones/' + base_zone_fn)
             lines = f2.readlines()
             f2.close()
-            print(lines)
 
             found = False
             ds_rr_value = ds_record.split('DS')[1].strip()
@@ -383,16 +368,8 @@ class UpdateBaseZone(APIView):
                 if bucket_id + '       IN       DS      ' in line:
                     lines[ind] = bucket_id + '       IN       DS      ' + ds_rr_value + '\n'
                     found = True
-                if bucket_id + '       IN       NS      ns1.' + bucket_id in line:
-                    lines[ind] = bucket_id + '       IN       NS      ns1.' + bucket_id + '.cashcash.app.\n'
-                if bucket_id + '       IN       NS      ns2.' + bucket_id in line:
-                    lines[ind] = bucket_id + '       IN       NS      ns2.' + bucket_id + '.cashcash.app.\n'
-                if 'ns1.' + bucket_id + '    IN      A       ' in line:
-                    lines[ind] = 'ns1.' + bucket_id + '    IN      A       ' + sub_zone_ip + '\n'
-                if 'ns2.' + bucket_id + '    IN      A       ' in line:
-                    lines[ind] = 'ns2.' + bucket_id + '    IN      A       ' + sub_zone_ip + '\n'
+            print('found', found)
 
-            print(found)
             if not found:
                 lines.append(bucket_id + '       IN       DS      ' + ds_rr_value + '\n')
                 lines.append(bucket_id + '       IN       NS      ns1.' + bucket_id + '.cashcash.app.\n')
@@ -403,22 +380,11 @@ class UpdateBaseZone(APIView):
             f2 = open(base_dir + 'zones/' + base_zone_fn, 'w')
             f2.write("".join(lines))
             f2.close()
-            os.system('cp ' + base_dir + 'zones/' + base_zone_fn + ' ' + base_dir + 'zones/' + base_zone_fn + '.test')
-
-            # previous update code
-            # f2.write('\n')
-            # ds_rr_value = ds_record.split('DS')[1].strip()
-            # f2.write(bucket_id + '       IN       DS      ' + ds_rr_value + '\n')
-            # f2.write(bucket_id + '       IN       NS      ns1.' + bucket_id + '.cashcash.app.\n')
-            # f2.write(bucket_id + '       IN       NS      ns2.' + bucket_id + '.cashcash.app.\n')
-            # f2.write('ns1.' + bucket_id + '    IN      A       ' + sub_zone_ip + '\n')
-            # f2.write('ns2.' + bucket_id + '    IN      A       ' + sub_zone_ip + '\n')
-            # f2.close()
 
             # resign the base zone
-            p = _execute_bash("dnssec-signzone -A -3 $(head -c 1000 /dev/random | sha1sum | cut -b 1-16) "
-                              "-k /etc/bind/zones/Kcashcash.app.+007+48166.key -N INCREMENT -o cashcash.app  "
-                              "-t /etc/bind/zones/db.cashcash.app /etc/bind/zones/Kcashcash.app.+007+53958.private")
+            p = _execute_bash("dnssec-signzone -k " + base_zone_keys["ksk"] + '.key' +
+                              " -N INCREMENT -o cashcash.app  -t /etc/bind/zones/db.cashcash.app"
+                              " " + base_zone_keys["zsk"] + '.private')
             stdout = p.stdout.decode().split('\n') + p.stderr.decode().split('\n')
             print(p)
             signed = False
@@ -430,7 +396,7 @@ class UpdateBaseZone(APIView):
             _reload_bind()
             return Response({'success': True}, status=status.HTTP_200_OK)
         except Exception as e:
-            print(e)
+            print('Exception in update base zone', e)
             os.system('mv ' + base_dir + 'zones/' + base_zone_fn + '.bk ' + base_dir + 'zones/' + base_zone_fn)
             os.system(
                 'mv ' + base_dir + 'zones/' + signed_base_zone_fn + '.bk ' + base_dir + 'zones/' + signed_base_zone_fn)
