@@ -301,6 +301,7 @@ class SignASubZone(APIView):
 
             # 3. upload dnskey as a ds record to the base zone and resign the base zone
             flag = 2
+            global needs_base_zone_update
             print('needs', needs_base_zone_update)
             if needs_base_zone_update:
                 with open('dsset-' + zone_domain + '.') as f1:
