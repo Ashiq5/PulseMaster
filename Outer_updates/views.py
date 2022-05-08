@@ -244,7 +244,7 @@ class SignASubZone(APIView):
         4. reload
         """
         _load_key_map()
-        print('Key Map', key_map)
+        print('Key Map', len(key_map))
         flag = 1
         zone_domain = kwargs['bucket_id'] + '.' + base_domain
         zone_fn = "db." + zone_domain
