@@ -3,7 +3,7 @@ import os
 import pathlib
 import subprocess
 import requests
-
+import logging
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -14,6 +14,14 @@ if LOCAL:
     base_dir = '/home/ubuntu/standalones/bind-test/'
 else:
     base_dir = '/etc/bind/'
+
+logging.basicConfig(filename='logs/log',
+                    filemode='a',
+                    format='%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s',
+                    datefmt='%H:%M:%S',
+                    level=logging.DEBUG)
+
+logging.info("Start")
 
 base_domain = 'cashcash.app'
 base_zone_fn = 'db.' + base_domain
@@ -212,6 +220,7 @@ class InitializeSubZones(APIView):
         except Exception as e:
             # revert all the steps done before
             print('Exception in init', e)
+            logging.debug('Exception in init' + str(e))
             _hard_refresh()
             return Response({'success': False, 'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -268,6 +277,7 @@ class SignASubZone(APIView):
             f = open(base_dir + 'zones/' + zone_domain + '/' + zone_fn, 'w')
             f.write("".join(lines))
             f.close()
+            logging.info("subzone " + bucket_id + " 's zone file properly changed")
 
             # 2. produce the signed zone file
             p = _execute_bash(
@@ -284,6 +294,7 @@ class SignASubZone(APIView):
             print(stdout)
             if not signed:
                 raise Exception("Signing resulted in failure: " + "\n".join(stdout))
+            logging.info("subzone " + bucket_id + " properly signed")
 
             # 3. upload dnskey as a ds record to the base zone and resign the base zone
             flag = 2
@@ -300,6 +311,7 @@ class SignASubZone(APIView):
                 if res.status_code != 200:
                     # TODO: extract error string
                     raise Exception("Base Zone modification resulted in error: ")
+            logging.info("base zone updated properly")
 
             # 4. load the signed zone in named.conf.local
             flag = 3
@@ -315,13 +327,15 @@ class SignASubZone(APIView):
             local_bind_file = open(base_dir + 'named.conf.local', 'w')
             local_bind_file.write("".join(lines))
             local_bind_file.close()
+            logging.info("named.conf.local updated")
 
             # 5. reload
             flag = 4
             _reload_bind()
             return Response({'success': True}, status=status.HTTP_200_OK)
         except Exception as e:
-            print(e)
+            print('Exception in signing', e)
+            logging.debug('Exception in signing, ' + str(e))
             if flag == 1:
                 os.system('mv ' + base_dir + 'zones/' + zone_domain + '/' + zone_fn + '.bk ' + base_dir + 'zones/' +
                           zone_domain + '/' + zone_fn)
