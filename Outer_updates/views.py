@@ -246,12 +246,13 @@ class SignASubZone(APIView):
         _load_key_map()
         print('Key Map', key_map)
         flag = 1
+        zone_domain = kwargs['bucket_id'] + '.' + base_domain
+        zone_fn = "db." + zone_domain
+        signed_zone_fn = zone_fn + ".signed"
         try:
-            zone_domain = kwargs['bucket_id'] + '.' + base_domain
-            zone_fn = "db." + zone_domain
-            signed_zone_fn = zone_fn + ".signed"
-
             # 1. update the placeholder ip
+            os.system('cp ' + base_dir + 'zones/' + zone_domain + '/' + zone_fn + ' ' + base_dir + 'zones/' +
+                      zone_domain + '/' + zone_fn + '.bk')
             f = open(base_dir + 'zones/' + zone_domain + '/' + zone_fn)
             lines = f.readlines()
             found = False
@@ -307,7 +308,7 @@ class SignASubZone(APIView):
             lines = local_bind_file.readlines()
             for ind, line in enumerate(lines):
                 if 'file "' + base_dir + 'zones/' + zone_domain + '/' + zone_fn + '' in line:
-                    x = '               file "' + base_dir + 'zones/' + zone_domain + '/' + signed_zone_fn + '";\n'
+                    x = '                file "' + base_dir + 'zones/' + zone_domain + '/' + signed_zone_fn + '";\n'
                     lines[ind] = x
             local_bind_file.close()
 
@@ -321,6 +322,10 @@ class SignASubZone(APIView):
             return Response({'success': True}, status=status.HTTP_200_OK)
         except Exception as e:
             print(e)
+            if flag == 1:
+                os.system('mv ' + base_dir + 'zones/' + zone_domain + '/' + zone_fn + '.bk ' + base_dir + 'zones/' +
+                          zone_domain + '/' + zone_fn)
+                os.system("mv " + base_dir + "named.conf.local.bk " + base_dir + "named.conf.local")
             if flag == 3:
                 os.system("mv " + base_dir + "named.conf.local.bk " + base_dir + "named.conf.local")
             # 5. reload
