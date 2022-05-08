@@ -250,6 +250,7 @@ class InitializeSubZones(APIView):
 
         # 5. reload bind
         _reload_bind()
+        logging.info("init done")
         return Response({'success': True}, status=status.HTTP_200_OK)
 
 
@@ -411,33 +412,10 @@ class UpdateBaseZone(APIView):
 
             # found = [False] * 5
             ds_rr_value = ds_record.split('DS')[1].strip()
-            # for ind, line in enumerate(lines):
-            #     if bucket_id + '       IN       DS      ' in line:
-            #         lines[ind] = bucket_id + '       IN       DS      ' + ds_rr_value + '\n'
-            #         found[0] = True
-            #     if bucket_id + '       IN       NS      ns1.' in line:
-            #         lines[ind] = bucket_id + '       IN       NS      ns1.' + bucket_id + '.cashcash.app.\n'
-            #         found[1] = True
-            #     if bucket_id + '       IN       NS      ns2.' in line:
-            #         lines[ind] = bucket_id + '       IN       NS      ns2.' + bucket_id + '.cashcash.app.\n'
-            #         found[2] = True
-            #     if 'ns1.' + bucket_id + '    IN      A       ' + sub_zone_ip + '\n' in line:
-            #         lines[ind] = 'ns1.' + bucket_id + '    IN      A       ' + sub_zone_ip + '\n'
-            #         found[3] = True
-            #     if 'ns2.' + bucket_id + '    IN      A       ' + sub_zone_ip + '\n' in line:
-            #         lines[ind] = 'ns2.' + bucket_id + '    IN      A       ' + sub_zone_ip + '\n'
-            #         found[4] = True
-            # print('found', found)
-
-            # if not found[0]:
             lines.append(bucket_id + '       IN       DS      ' + ds_rr_value + '\n')
-            # if not found[1]:
             lines.append(bucket_id + '       IN       NS      ns1.' + bucket_id + '.cashcash.app.\n')
-            # if not found[2]:
             lines.append(bucket_id + '       IN       NS      ns2.' + bucket_id + '.cashcash.app.\n')
-            # if not found[3]:
             lines.append('ns1.' + bucket_id + '    IN      A       ' + sub_zone_ip + '\n')
-            # if not found[4]:
             lines.append('ns2.' + bucket_id + '    IN      A       ' + sub_zone_ip + '\n')
 
             f2 = open(base_dir + 'zones/' + base_zone_fn, 'w')
