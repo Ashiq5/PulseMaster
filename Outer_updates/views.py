@@ -15,7 +15,7 @@ if LOCAL:
 else:
     base_dir = '/etc/bind/'
 
-logging.basicConfig(filename='logs/log',
+logging.basicConfig(filename='Outer_updates/logs/log',
                     filemode='a',
                     format='%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s',
                     datefmt='%H:%M:%S',
