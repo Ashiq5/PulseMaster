@@ -103,9 +103,30 @@ def _hard_refresh():
         raise e
 
 
+def _call_is_resigned_api(bucket_id):
+    url = "http://" + sub_zone_ip + ':8080/is-being-resigned/?bucket_id=' + bucket_id
+    header = {
+        "Content-Type": "application/json",
+    }
+    res = requests.get(url, headers=header)
+    if res.status_code != 200:
+        raise Exception("resigning api resulted in error: ")
+    return Response({'success': True}, status=status.HTTP_200_OK)
+
+
 def _reload_bind():
     # os.system("rndc reload")
     os.system("service bind9 reload")
+
+
+class IsResigned(APIView):
+    def get(self, request):
+        kwargs = request.GET.dict()
+        bucket_id = kwargs['bucket_id']
+
+        global needs_base_zone_update
+        needs_base_zone_update[bucket_id] = False
+        return Response({'success': True}, status=status.HTTP_200_OK)
 
 
 class Refresh(APIView):
@@ -436,9 +457,7 @@ class UpdateBaseZone(APIView):
             if not signed:
                 raise Exception("Signing resulted in failure: " + "\n".join(stdout))
             _reload_bind()
-            global needs_base_zone_update
-            needs_base_zone_update[bucket_id] = False
-            print('needs', bucket_id, needs_base_zone_update[bucket_id])
+            _call_is_resigned_api(bucket_id)
             return Response({'success': True}, status=status.HTTP_200_OK)
         except Exception as e:
             print('Exception in update base zone', e)

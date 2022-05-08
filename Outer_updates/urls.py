@@ -17,7 +17,7 @@ from django.contrib import admin
 from django.urls import path, include
 
 app_name = 'Outer_updates'
-from .views import SignASubZone, InitializeSubZones, UpdateBaseZone, RefreshBaseZone, Refresh
+from .views import SignASubZone, InitializeSubZones, UpdateBaseZone, RefreshBaseZone, Refresh, IsResigned
 
 urlpatterns = [
     path('refresh/', Refresh.as_view(), name='refresh'),
@@ -25,4 +25,5 @@ urlpatterns = [
     path('update-base-zone/', UpdateBaseZone.as_view(), name='update_base_zone'),
     path('sign-a-subzone/', SignASubZone.as_view(), name='sign_a_subzone'),
     path('init-subzones/', InitializeSubZones.as_view(), name='init_subzones'),
+    path('is-being-resigned/', IsResigned.as_view(), name='is_resigned')
 ]
