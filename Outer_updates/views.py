@@ -325,8 +325,9 @@ class SignASubZone(APIView):
             if flag == 1:
                 os.system('mv ' + base_dir + 'zones/' + zone_domain + '/' + zone_fn + '.bk ' + base_dir + 'zones/' +
                           zone_domain + '/' + zone_fn)
-                os.system("mv " + base_dir + "named.conf.local.bk " + base_dir + "named.conf.local")
             if flag == 3:
+                os.system('mv ' + base_dir + 'zones/' + zone_domain + '/' + zone_fn + '.bk ' + base_dir + 'zones/' +
+                          zone_domain + '/' + zone_fn)
                 os.system("mv " + base_dir + "named.conf.local.bk " + base_dir + "named.conf.local")
             # 5. reload
             _reload_bind()
