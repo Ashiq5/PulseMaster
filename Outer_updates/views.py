@@ -37,7 +37,7 @@ base_zone_keys = {
     "zsk": "/etc/bind/zones/Kcashcash.app.+008+61375",
     "ksk": "/etc/bind/zones/Kcashcash.app.+008+41837"
 }
-needs_base_zone_update = False
+needs_base_zone_update = {}
 
 
 def _return_zone_file_content(**kwargs):
@@ -142,7 +142,6 @@ class InitializeSubZones(APIView):
             return Response({'success': False, 'error': str("Should not be applied in the base zone")},
                             status=status.HTTP_400_BAD_REQUEST)
         global needs_base_zone_update
-        needs_base_zone_update = True
         kwargs = request.GET.dict()
         print(kwargs)
         ttl = kwargs['ttl']
@@ -170,6 +169,7 @@ class InitializeSubZones(APIView):
             os.system('cp ' + base_dir + 'named.conf.local ' + base_dir + 'named.conf.local.bk')
             # 1. create # zone files for # of buckets
             for i in range(1 + offset, int(buckets) + 1 + offset):
+                needs_base_zone_update[str(i)] = True
                 zone_domain = str(i) + '.' + base_domain
                 zone_fn = "db." + zone_domain
                 pathlib.Path(base_dir + 'zones/' + zone_domain).mkdir(parents=True, exist_ok=True)
@@ -302,8 +302,8 @@ class SignASubZone(APIView):
             # 3. upload dnskey as a ds record to the base zone and resign the base zone
             flag = 2
             global needs_base_zone_update
-            print('needs', needs_base_zone_update)
-            if needs_base_zone_update:
+            print('needs', bucket_id, needs_base_zone_update)
+            if needs_base_zone_update[bucket_id]:
                 with open('dsset-' + zone_domain + '.') as f1:
                     lines = f1.readlines()
                     ds_rr = lines[0].strip()
@@ -437,8 +437,8 @@ class UpdateBaseZone(APIView):
                 raise Exception("Signing resulted in failure: " + "\n".join(stdout))
             _reload_bind()
             global needs_base_zone_update
-            needs_base_zone_update = False
-            print('needs', needs_base_zone_update)
+            needs_base_zone_update[bucket_id] = False
+            print('needs', bucket_id, needs_base_zone_update[bucket_id])
             return Response({'success': True}, status=status.HTTP_200_OK)
         except Exception as e:
             print('Exception in update base zone', e)
