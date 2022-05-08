@@ -37,6 +37,7 @@ base_zone_keys = {
     "zsk": "/etc/bind/zones/Kcashcash.app.+008+61375",
     "ksk": "/etc/bind/zones/Kcashcash.app.+008+41837"
 }
+needs_base_zone_update = False
 
 
 def _return_zone_file_content(**kwargs):
@@ -140,6 +141,8 @@ class InitializeSubZones(APIView):
         if BASE_ZONE:
             return Response({'success': False, 'error': str("Should not be applied in the base zone")},
                             status=status.HTTP_400_BAD_REQUEST)
+        global needs_base_zone_update
+        needs_base_zone_update = True
         kwargs = request.GET.dict()
         print(kwargs)
         ttl = kwargs['ttl']
@@ -298,20 +301,22 @@ class SignASubZone(APIView):
 
             # 3. upload dnskey as a ds record to the base zone and resign the base zone
             flag = 2
-            with open('dsset-' + zone_domain + '.') as f1:
-                lines = f1.readlines()
-                ds_rr = lines[0].strip()
+            print('needs', needs_base_zone_update)
+            if needs_base_zone_update:
+                with open('dsset-' + zone_domain + '.') as f1:
+                    lines = f1.readlines()
+                    ds_rr = lines[0].strip()
 
-                url_for_post = "http://" + base_zone_ip + ':8080/update-base-zone/'
-                url_for_get = url_for_post + '?bucket_id=' + bucket_id + '&ds_record=' + ds_rr
-                header = {
-                    "Content-Type": "application/json",
-                }
-                res = requests.get(url_for_get, headers=header)
-                if res.status_code != 200:
-                    # TODO: extract error string
-                    raise Exception("Base Zone modification resulted in error: ")
-            logging.info("base zone updated properly")
+                    url_for_post = "http://" + base_zone_ip + ':8080/update-base-zone/'
+                    url_for_get = url_for_post + '?bucket_id=' + bucket_id + '&ds_record=' + ds_rr
+                    header = {
+                        "Content-Type": "application/json",
+                    }
+                    res = requests.get(url_for_get, headers=header)
+                    if res.status_code != 200:
+                        # TODO: extract error string
+                        raise Exception("Base Zone modification resulted in error: ")
+                logging.info("base zone updated properly")
 
             # 4. load the signed zone in named.conf.local
             flag = 3
@@ -382,36 +387,36 @@ class UpdateBaseZone(APIView):
             lines = f2.readlines()
             f2.close()
 
-            found = [False] * 5
+            # found = [False] * 5
             ds_rr_value = ds_record.split('DS')[1].strip()
-            for ind, line in enumerate(lines):
-                if bucket_id + '       IN       DS      ' in line:
-                    lines[ind] = bucket_id + '       IN       DS      ' + ds_rr_value + '\n'
-                    found[0] = True
-                if bucket_id + '       IN       NS      ns1.' in line:
-                    lines[ind] = bucket_id + '       IN       NS      ns1.' + bucket_id + '.cashcash.app.\n'
-                    found[1] = True
-                if bucket_id + '       IN       NS      ns2.' in line:
-                    lines[ind] = bucket_id + '       IN       NS      ns2.' + bucket_id + '.cashcash.app.\n'
-                    found[2] = True
-                if 'ns1.' + bucket_id + '    IN      A       ' + sub_zone_ip + '\n' in line:
-                    lines[ind] = 'ns1.' + bucket_id + '    IN      A       ' + sub_zone_ip + '\n'
-                    found[3] = True
-                if 'ns2.' + bucket_id + '    IN      A       ' + sub_zone_ip + '\n' in line:
-                    lines[ind] = 'ns2.' + bucket_id + '    IN      A       ' + sub_zone_ip + '\n'
-                    found[4] = True
-            print('found', found)
+            # for ind, line in enumerate(lines):
+            #     if bucket_id + '       IN       DS      ' in line:
+            #         lines[ind] = bucket_id + '       IN       DS      ' + ds_rr_value + '\n'
+            #         found[0] = True
+            #     if bucket_id + '       IN       NS      ns1.' in line:
+            #         lines[ind] = bucket_id + '       IN       NS      ns1.' + bucket_id + '.cashcash.app.\n'
+            #         found[1] = True
+            #     if bucket_id + '       IN       NS      ns2.' in line:
+            #         lines[ind] = bucket_id + '       IN       NS      ns2.' + bucket_id + '.cashcash.app.\n'
+            #         found[2] = True
+            #     if 'ns1.' + bucket_id + '    IN      A       ' + sub_zone_ip + '\n' in line:
+            #         lines[ind] = 'ns1.' + bucket_id + '    IN      A       ' + sub_zone_ip + '\n'
+            #         found[3] = True
+            #     if 'ns2.' + bucket_id + '    IN      A       ' + sub_zone_ip + '\n' in line:
+            #         lines[ind] = 'ns2.' + bucket_id + '    IN      A       ' + sub_zone_ip + '\n'
+            #         found[4] = True
+            # print('found', found)
 
-            if not found[0]:
-                lines.append(bucket_id + '       IN       DS      ' + ds_rr_value + '\n')
-            if not found[1]:
-                lines.append(bucket_id + '       IN       NS      ns1.' + bucket_id + '.cashcash.app.\n')
-            if not found[2]:
-                lines.append(bucket_id + '       IN       NS      ns2.' + bucket_id + '.cashcash.app.\n')
-            if not found[3]:
-                lines.append('ns1.' + bucket_id + '    IN      A       ' + sub_zone_ip + '\n')
-            if not found[4]:
-                lines.append('ns2.' + bucket_id + '    IN      A       ' + sub_zone_ip + '\n')
+            # if not found[0]:
+            lines.append(bucket_id + '       IN       DS      ' + ds_rr_value + '\n')
+            # if not found[1]:
+            lines.append(bucket_id + '       IN       NS      ns1.' + bucket_id + '.cashcash.app.\n')
+            # if not found[2]:
+            lines.append(bucket_id + '       IN       NS      ns2.' + bucket_id + '.cashcash.app.\n')
+            # if not found[3]:
+            lines.append('ns1.' + bucket_id + '    IN      A       ' + sub_zone_ip + '\n')
+            # if not found[4]:
+            lines.append('ns2.' + bucket_id + '    IN      A       ' + sub_zone_ip + '\n')
 
             f2 = open(base_dir + 'zones/' + base_zone_fn, 'w')
             f2.write("".join(lines))
@@ -430,6 +435,9 @@ class UpdateBaseZone(APIView):
             if not signed:
                 raise Exception("Signing resulted in failure: " + "\n".join(stdout))
             _reload_bind()
+            global needs_base_zone_update
+            needs_base_zone_update = False
+            print('needs', needs_base_zone_update)
             return Response({'success': True}, status=status.HTTP_200_OK)
         except Exception as e:
             print('Exception in update base zone', e)
