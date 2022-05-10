@@ -4,6 +4,7 @@ import pathlib
 import subprocess
 import requests
 import logging
+import fileinput
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -38,6 +39,20 @@ base_zone_keys = {
     "ksk": "/etc/bind/zones/Kcashcash.app.+008+41837"
 }
 needs_base_zone_update = {}
+
+
+def _replace_in_file(file_path, search_text, new_line):
+    found = False
+    with fileinput.input(file_path, inplace=True) as file:
+        for line in file:
+            if search_text in line:
+                found = True
+                print(new_line, end='')
+            else:
+                print(line, end='')
+    if not found:
+        with open(file_path, 'a') as file:
+            file.write('\n' + new_line)
 
 
 def _return_zone_file_content(**kwargs):
@@ -76,6 +91,12 @@ def _execute_bash(cmd):
     return subprocess.run(cmd, shell=True, capture_output=True)
 
 
+def _execute_bash_v2(cmd):
+    print('Command_v2:', cmd)
+    p = subprocess.run(cmd, shell=True, capture_output=True)
+    logging.debug(cmd + " " + p.stdout.decode() + " " + p.stderr.decode())
+
+
 def _load_key_map():
     for dirs in os.listdir(base_dir + 'zones/'):
         try:
@@ -94,10 +115,10 @@ def _load_key_map():
 
 def _hard_refresh():
     try:
-        os.system("cp " + base_dir + "named.conf.local.basic " + base_dir + "named.conf.local")
+        _execute_bash_v2("cp " + base_dir + "named.conf.local.basic " + base_dir + "named.conf.local")
         for dirs in os.listdir(base_dir + 'zones/'):
             if os.path.isdir(base_dir + 'zones/' + dirs + '/'):
-                os.system("rm -r " + base_dir + 'zones/' + dirs + '/')
+                _execute_bash_v2("rm -r " + base_dir + 'zones/' + dirs + '/')
         _reload_bind()
     except Exception as e:
         raise e
@@ -114,9 +135,21 @@ def _call_is_resigned_api(bucket_id):
     return Response({'success': True}, status=status.HTTP_200_OK)
 
 
+def _call_sign_api(bucket_id, placeholder_ip, validity):
+    url = "http://" + sub_zone_ip + ':8080/sign-a-subzone/?bucket_id=' + bucket_id + '&signature_validity=' + validity \
+          + "&ip=" + placeholder_ip
+    header = {
+        "Content-Type": "application/json",
+    }
+    res = requests.get(url, headers=header)
+    if res.status_code != 200:
+        raise Exception("signing resulted in error")
+    return Response({'success': True}, status=status.HTTP_200_OK)
+
+
 def _reload_bind():
-    # os.system("rndc reload")
-    os.system("service bind9 reload")
+    # _execute_bash_v2("rndc reload")
+    _execute_bash_v2("service bind9 reload")
 
 
 class IsResigned(APIView):
@@ -187,7 +220,7 @@ class InitializeSubZones(APIView):
             if res.status_code != 200:
                 # TODO: extract error string
                 raise Exception("Base Zone refresh resulted in error: ")
-            os.system('cp ' + base_dir + 'named.conf.local ' + base_dir + 'named.conf.local.bk')
+            _execute_bash_v2('cp ' + base_dir + 'named.conf.local ' + base_dir + 'named.conf.local.bk')
             # 1. create # zone files for # of buckets
             for i in range(1 + offset, int(buckets) + 1 + offset):
                 needs_base_zone_update[str(i)] = True
@@ -239,8 +272,10 @@ class InitializeSubZones(APIView):
                 local_bind_file.write(local)
                 local_bind_file.close()
 
+                _call_sign_api(i, "10.0.0.1", 30)
+
                 # remove the backup file on success
-                # os.system("rm " + base_dir + "named.conf.local.bk")
+                # _execute_bash_v2("rm " + base_dir + "named.conf.local.bk")
         except Exception as e:
             # revert all the steps done before
             print('Exception in init', e)
@@ -285,23 +320,14 @@ class SignASubZone(APIView):
         signed_zone_fn = zone_fn + ".signed"
         try:
             # 1. update the placeholder ip
-            os.system('cp ' + base_dir + 'zones/' + zone_domain + '/' + zone_fn + ' ' + base_dir + 'zones/' +
-                      zone_domain + '/' + zone_fn + '.bk')
-            f = open(base_dir + 'zones/' + zone_domain + '/' + zone_fn)
-            lines = f.readlines()
-            found = False
-            x = "*" + "             IN      A       " + ip + "\n"
-            for ind, line in enumerate(lines):
-                if "*" + "             IN      A       " in line:
-                    lines[ind] = x
-                    found = True
-            if not found:
-                lines.append(x + "\n\n")
-            f.close()
+            _execute_bash_v2('cp ' + base_dir + 'zones/' + zone_domain + '/' + zone_fn + ' ' + base_dir + 'zones/' +
+                             zone_domain + '/' + zone_fn + '.bk')
+            if os.path.exists(base_dir + 'zones/' + zone_domain + '/' + zone_fn + '.signed'):
+                _execute_bash_v2('cp ' + base_dir + 'zones/' + zone_domain + '/' + zone_fn + '.signed ' + base_dir +
+                                 'zones/' + zone_domain + '/' + zone_fn + '.signed.bk')
 
-            f = open(base_dir + 'zones/' + zone_domain + '/' + zone_fn, 'w')
-            f.write("".join(lines))
-            f.close()
+            file_path = base_dir + 'zones/' + zone_domain + '/' + zone_fn
+            _replace_in_file(file_path, "*             IN      A       ", "*             IN      A       " + ip)
             logging.info("subzone " + bucket_id + " 's zone file properly changed")
 
             # 2. produce the signed zone file
@@ -341,21 +367,14 @@ class SignASubZone(APIView):
                         raise Exception("Base Zone modification resulted in error: ")
                 logging.info("base zone updated properly")
 
-            # 4. load the signed zone in named.conf.local
-            flag = 3
-            os.system('cp ' + base_dir + 'named.conf.local ' + base_dir + 'named.conf.local.bk')
-            local_bind_file = open(base_dir + 'named.conf.local', 'r')
-            lines = local_bind_file.readlines()
-            for ind, line in enumerate(lines):
-                if 'file "' + base_dir + 'zones/' + zone_domain + '/' + zone_fn + '' in line:
-                    x = '                file "' + base_dir + 'zones/' + zone_domain + '/' + signed_zone_fn + '";\n'
-                    lines[ind] = x
-            local_bind_file.close()
+                # 4. load the signed zone in named.conf.local
+                flag = 3
+                _execute_bash_v2('cp ' + base_dir + 'named.conf.local ' + base_dir + 'named.conf.local.bk')
 
-            local_bind_file = open(base_dir + 'named.conf.local', 'w')
-            local_bind_file.write("".join(lines))
-            local_bind_file.close()
-            logging.info("named.conf.local updated")
+                file_path = base_dir + 'named.conf.local'
+                _replace_in_file(file_path, 'file "' + base_dir + 'zones/' + zone_domain + '/' + zone_fn + '',
+                                 '                file "' + base_dir + 'zones/' + zone_domain + '/' + signed_zone_fn + '";\n')
+                logging.info("named.conf.local updated")
 
             # 5. reload
             flag = 4
@@ -364,13 +383,15 @@ class SignASubZone(APIView):
         except Exception as e:
             print('Exception in signing', e)
             logging.debug('Exception in signing, ' + str(e))
-            if flag == 1:
-                os.system('mv ' + base_dir + 'zones/' + zone_domain + '/' + zone_fn + '.bk ' + base_dir + 'zones/' +
-                          zone_domain + '/' + zone_fn)
-            if flag == 3:
-                os.system('mv ' + base_dir + 'zones/' + zone_domain + '/' + zone_fn + '.bk ' + base_dir + 'zones/' +
-                          zone_domain + '/' + zone_fn)
-                os.system("mv " + base_dir + "named.conf.local.bk " + base_dir + "named.conf.local")
+            if flag == 1 or flag == 3:
+                _execute_bash_v2('cp ' + base_dir + 'zones/' + zone_domain + '/' + zone_fn + '.bk ' + base_dir + 'zones/' +
+                                 zone_domain + '/' + zone_fn)
+                if os.path.exists(base_dir + 'zones/' + zone_domain + '/' + zone_fn + '.signed.bk'):
+                    _execute_bash_v2(
+                        'cp ' + base_dir + 'zones/' + zone_domain + '/' + zone_fn + '.signed.bk ' + base_dir + 'zones/' +
+                        zone_domain + '/' + zone_fn + '.signed')
+                if flag == 3:
+                    _execute_bash_v2("cp " + base_dir + "named.conf.local.bk " + base_dir + "named.conf.local")
             # 5. reload
             _reload_bind()
             return Response({'success': False, 'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
@@ -382,9 +403,9 @@ class RefreshBaseZone(APIView):
             return Response({'success': False, 'error': str("Should not be applied in the sub zone")},
                             status=status.HTTP_400_BAD_REQUEST)
         try:
-            os.system('cp ' + base_dir + 'zones/' + base_zone_fn + '.basic ' + base_dir + 'zones/' + base_zone_fn)
-            os.system('cp ' + base_dir + 'zones/' + base_zone_fn + '.signed.basic ' +
-                      base_dir + 'zones/' + base_zone_fn + '.signed')
+            _execute_bash_v2('cp ' + base_dir + 'zones/' + base_zone_fn + '.basic ' + base_dir + 'zones/' + base_zone_fn)
+            _execute_bash_v2('cp ' + base_dir + 'zones/' + base_zone_fn + '.signed.basic ' +
+                             base_dir + 'zones/' + base_zone_fn + '.signed')
             _reload_bind()
             return Response({'success': True}, status=status.HTTP_200_OK)
         except Exception as e:
@@ -402,15 +423,15 @@ class UpdateBaseZone(APIView):
         ds_record = kwargs['ds_record'].replace('%20', ' ').replace('%09', ' ')
         print("ds record", ds_record, "bucket_id", bucket_id)
         try:
-            os.system('cp ' + base_dir + 'zones/' + base_zone_fn + ' ' + base_dir + 'zones/' + base_zone_fn + '.bk')
-            os.system(
-                'cp ' + base_dir + 'zones/' + signed_base_zone_fn + ' ' + base_dir + 'zones/' + signed_base_zone_fn + '.bk')
+            _execute_bash_v2('cp ' + base_dir + 'zones/' + base_zone_fn + ' ' + base_dir + 'zones/' + base_zone_fn + '.bk')
+            _execute_bash_v2(
+                'cp ' + base_dir + 'zones/' + signed_base_zone_fn + ' ' + base_dir + 'zones/' + signed_base_zone_fn +
+                '.bk')
 
             f2 = open(base_dir + 'zones/' + base_zone_fn)
             lines = f2.readlines()
             f2.close()
 
-            # found = [False] * 5
             ds_rr_value = ds_record.split('DS')[1].strip()
             lines.append(bucket_id + '       IN       DS      ' + ds_rr_value + '\n')
             lines.append(bucket_id + '       IN       NS      ns1.' + bucket_id + '.cashcash.app.\n')
@@ -439,8 +460,8 @@ class UpdateBaseZone(APIView):
             return Response({'success': True}, status=status.HTTP_200_OK)
         except Exception as e:
             print('Exception in update base zone', e)
-            os.system('mv ' + base_dir + 'zones/' + base_zone_fn + '.bk ' + base_dir + 'zones/' + base_zone_fn)
-            os.system(
-                'mv ' + base_dir + 'zones/' + signed_base_zone_fn + '.bk ' + base_dir + 'zones/' + signed_base_zone_fn)
+            _execute_bash_v2('cp ' + base_dir + 'zones/' + base_zone_fn + '.bk ' + base_dir + 'zones/' + base_zone_fn)
+            _execute_bash_v2(
+                'cp ' + base_dir + 'zones/' + signed_base_zone_fn + '.bk ' + base_dir + 'zones/' + signed_base_zone_fn)
             _reload_bind()
             return Response({'success': False, 'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
