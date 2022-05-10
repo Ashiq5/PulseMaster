@@ -327,7 +327,8 @@ class SignASubZone(APIView):
                                  'zones/' + zone_domain + '/' + zone_fn + '.signed.bk')
 
             file_path = base_dir + 'zones/' + zone_domain + '/' + zone_fn
-            _replace_in_file(file_path, "*             IN      A       ", "*             IN      A       " + ip)
+            x = "*             IN      A       "
+            _replace_in_file(file_path, x, x + ip + '\n')
             logging.info("subzone " + bucket_id + " 's zone file properly changed")
 
             # 2. produce the signed zone file
