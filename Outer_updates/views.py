@@ -52,7 +52,7 @@ def _replace_in_file(file_path, search_text, new_line):
                 print(line, end='')
     if not found:
         with open(file_path, 'a') as file:
-            file.write('\n' + new_line)
+            file.write('\n' + new_line + '\n')
 
 
 def _return_zone_file_content(**kwargs):
