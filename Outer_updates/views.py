@@ -272,7 +272,7 @@ class InitializeSubZones(APIView):
                 local_bind_file.write(local)
                 local_bind_file.close()
 
-                _call_sign_api(i, "10.0.0.1", 30)
+                _call_sign_api(str(i), "10.0.0.1", str(30))
 
                 # remove the backup file on success
                 # _execute_bash_v2("rm " + base_dir + "named.conf.local.bk")
