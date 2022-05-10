@@ -370,6 +370,7 @@ class SignASubZone(APIView):
 
                 # 4. load the signed zone in named.conf.local
                 flag = 3
+                a = 5/0
                 _execute_bash_v2('cp ' + base_dir + 'named.conf.local ' + base_dir + 'named.conf.local.bk')
 
                 file_path = base_dir + 'named.conf.local'
