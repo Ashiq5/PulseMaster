@@ -58,7 +58,7 @@ def get_non_validating_resolver_ips(bind_info, req_id):
     resolvers = set()
     resolver_to_flag, resolver_to_timestamp = get_resolver_ips(bind_info, req_id)
     for ip in resolver_to_flag:
-        if not resolver_to_flag[ip][0] or not resolver_to_flag[ip][1] or not resolver_to_dnskey_presence[ip]:
+        if not resolver_to_flag[ip][0] or not resolver_to_flag[ip][1] or (ip in non_validating_resolvers):
             resolvers.add(ip)
     # print('non-validating resolvers', len(resolvers), resolver_to_flag[ip])
     return resolvers, resolver_to_timestamp
@@ -68,16 +68,25 @@ def get_validating_resolver_ips(bind_info, req_id):
     resolvers = set()
     resolver_to_flag, resolver_to_timestamp = get_resolver_ips(bind_info, req_id)
     for ip in resolver_to_flag:
-        if resolver_to_flag[ip][0] and resolver_to_flag[ip][1] and resolver_to_dnskey_presence[ip]:
+        if resolver_to_flag[ip][0] and resolver_to_flag[ip][1] and ip in validating_resolvers:
             resolvers.add(ip)
     # print('validating resolvers', len(resolvers))
     return resolvers, resolver_to_timestamp
 
 
 def get_all_resolver_ips(bind_info, req_id):
-    resolver_to_flag, resolver_to_timestamp = get_resolver_ips(bind_info, req_id)
+    lst = bind_info.get(req_id, [])
+    resolver_to_timestamp = {}
+    resolvers = set()
+    for e in lst:
+        ip = e['resolver_ip']
+        timestamp = datetime.datetime.timestamp(e['date'])
+        if ip not in resolver_to_timestamp:
+            resolver_to_timestamp[ip] = timestamp
+        resolvers.add(ip)
+    # resolver_to_flag, resolver_to_timestamp = get_resolver_ips(bind_info, req_id)
     # print('all resolvers', len(resolver_to_flag.keys()))
-    return set(resolver_to_flag.keys()), resolver_to_timestamp
+    return resolvers, resolver_to_timestamp
 
 
 def get_ip_hit_time_tuple(req_id, apache_info_one, apache_info_two):
@@ -151,7 +160,7 @@ def preprocess_live_data(data):
     if data['telemetry']['phase_1_server1'] != 'ok' or data['telemetry']['phase_2_server2'] != 'ok':
         return
     req_id_to_ip_hash = {}
-    save_telemetry(data)
+    # save_telemetry(data)
     d = data['dict_of_phases']
     ans = {}
     for k in d:
@@ -162,8 +171,10 @@ def preprocess_live_data(data):
             req_id_to_ip_hash[req_id] = js['ip_hash']
             phase_1 = js['host-phase-1']
             server_time_1 = js['1-time']
-            phase_2 = js['host-phase-2']
-            if phase_2 == "err":
+            phase_2 = js.get('host-phase-2')
+            if not phase_2:
+                return
+            elif phase_2 == "err":
                 if js.get("errmsg") == "Proxy Error: No peers with requested IP available":
                     server_time_2 = None
                     phase_2 = None
@@ -180,7 +191,7 @@ def preprocess_live_data(data):
                     server_time_2 = None
                     phase_2 = None
                 else:
-                    server_time_2 = None
+                    server_time_2 = js.get('2-time')
                     phase_2 = "ServFail"  # possibly for DNSSEC failure
             else:
                 server_time_2 = js['2-time']
@@ -227,6 +238,8 @@ def parse_bind_apache_logs(exp_id_list, files, is_bind=True):
 
     for file in files:
         index += 1
+        # if index == 20:
+        #     break
         try:
             with open(file) as FileObj:
                 for line in FileObj:
@@ -274,7 +287,7 @@ def parse_bind_apache_logs(exp_id_list, files, is_bind=True):
             print('Exception in file reading', e)
             continue
 
-        print("*** Done with parsing Bind file {}".format(file))
+        print("*** Done with parsing Bind/Apache file {}".format(file))
         print("Done with isbind {}, {}/{}".format(is_bind, index, tot_files))
 
     return ans_dict
@@ -335,49 +348,38 @@ def log_considered_resolvers(considered_resolvers, req_id, ip_hash, type_key,
 def parse_logs_ttl(exp_id, bind_info, apache_info_one, apache_info_two, exp_threshold):
     lists_in_hand = [apache_info_one, apache_info_two, bind_info]
     for l in lists_in_hand:
-        for k in event_strings:
-            if k in l:
-                l[k].sort(key=lambda x: x['date'])
         if 'req' in l:
-            for k in l['req']:
-                l['req'][k].sort(key=lambda x: x['date'])
-            # continue
-        # for k in l['child']['req']:
-        #     l['child']['req'][k].sort(key=lambda x: x['date'])
-        # for k in l['parent']['req']:
-        #     l['child']['req'][k].sort(key=lambda x: x['date'])
+            for uid in l['req']:
+                l['req'][uid].sort(key=lambda x: x['date'])
 
     phase_1_start = datetime.datetime.utcnow()
     for uid in bind_info['req']:
         if bind_info['req'][uid][0]['date'] < phase_1_start:
             phase_1_start = bind_info['req'][uid][0]['date']
-            phase_1_end = phase_1_start + datetime.timedelta(seconds=1.2*60)
+            phase_1_end = phase_1_start + datetime.timedelta(seconds=2*60)
             bind_info["phase1-start"] = phase_1_start
             bind_info["phase1-end"] = phase_1_end
     
-    # if "phase1-start" not in bind_info:
-    #     print(bind_info)
+    if "phase1-start" not in bind_info:
+        print("phase1-start absent", bind_info)
     phase_1_start = bind_info["phase1-start"]
+    phase_1_end = bind_info["phase1-end"]
+
     min_diff = 1e8
     for uid in bind_info['req']:
-        for item in bind_info['req'][uid]:
-            diff = (item['date'] - phase_1_start).seconds / 60
-            if item['date'] > phase_1_start and diff >= 39:
+        for req in bind_info['req'][uid]:
+            diff = (req['date'] - phase_1_start).seconds / 60
+            if req['date'] > phase_1_start and diff >= 39:
                 if diff < min_diff:
                     min_diff = diff
-                    bind_phase_2_start = item['date']
-                    bind_phase_2_end = item['date'] + datetime.timedelta(seconds=4.0*60)
+                    bind_phase_2_start = req['date']
+                    bind_phase_2_end = req['date'] + datetime.timedelta(seconds=4.0*60)
                     bind_info["sleep-end"] = bind_phase_2_start
                     bind_info["phase2-end"] = bind_phase_2_end
                     break
     if 'sleep-end' not in bind_info or 'phase2-end' not in bind_info:
         return [], [], []
     
-    # if exp_id == "live_dnssec_60_15016_161":
-    #     json_dump(bind_info, "Outer_updates/temp/temp1")
-    # print(exp_id, min_diff)
-    # print(exp_id, bind_info["phase1-start"], bind_info["phase1-end"], bind_info["sleep-end"], bind_info["phase2-end"])
-
     bind_info_curated_first = curate_time_segment(bind_info, bind_info["phase1-start"], bind_info["phase1-end"])
     bind_info_curated_second = curate_time_segment(bind_info, bind_info["sleep-end"], bind_info["phase2-end"])
 
@@ -516,7 +518,7 @@ def parse_logs_ttl(exp_id, bind_info, apache_info_one, apache_info_two, exp_thre
 
 
 def json_dump(d, fn):
-    json.dump(d, open(fn, 'w'), default=str)
+    json.dump(d, open(fn, 'w'), default=str, indent=4)
 
 
 def json_load(fn):
@@ -526,24 +528,22 @@ def json_load(fn):
 def master_calc():
     bind_info_global_par, bind_info_global_chi, apache_info_one_global, apache_info_two_global = parse_logs_together(
         allowed_exp_ids=[])
-    # json_dump(bind_info_global_par, 'Outer_updates/temp/bind_info_global_par.json')
-    # json_dump(bind_info_global_chi, 'Outer_updates/temp/bind_info_global_chi.json')
-    # json_dump(apache_info_one_global, 'Outer_updates/temp/apache_info_one_global.json')
-    # json_dump(apache_info_two_global, 'Outer_updates/temp/apache_info_two_global.json')
     bind_info_global = {}
-    # bind_info_global_par, bind_info_global_chi, apache_info_one_global, apache_info_two_global = \
-    #     json.load(open('Outer_updates/temp/bind_info_global_par.json')),\
-    #     json.load(open('Outer_updates/temp/bind_info_global_chi.json')),\
-    #     json.load(open('Outer_updates/temp/apache_info_one_global.json')),\
-    #     json.load(open('Outer_updates/temp/apache_info_two_global.json'))
 
-    # print(bind_info_global_par, bind_info_global_chi, apache_info_one_global, apache_info_two_global)
-    # print(bind_info_global_par.keys())
-    # print(bind_info_global_par['live_dnssec_60_18008_10']['req'])
-    # print(bind_info_global_chi['live_dnssec_60_18008_10']['req']['150d3ac9-1a83-4141-9cec-3966caadb3111652244706834'])
-    # print('apache1', apache_info_one_global['live_dnssec_60_15014_133']['req']['cc25a870-27af-400a-ba46-6327577661751652128289372'])
-    # print('apache2', apache_info_one_global['live_dnssec_60_15014_133']['req']['cc25a870-27af-400a-ba46-6327577661751652128289372'])
-    # print(bind_info_global_chi['live_dnssec_60_18008_10']['req']['150d3ac9-1a83-4141-9cec-3966caadb3111652244706834'])
+    # print(set(bind_info_global_par.keys()).intersection(set(bind_info_global_chi.keys())))
+    # print(bind_info_global_chi.keys())
+    # json_dump(apache_info_one_global['live_dnssec_60_30000_10'], 'Outer_updates/temp/apache1_info_global.json')
+    # json_dump(apache_info_two_global['live_dnssec_60_30000_10'], 'Outer_updates/temp/apache2_info_global.json')
+    # bind_info_global['live_dnssec_60_12007_16'] = {"req": {}}
+    # bind_info_global['live_dnssec_60_12007_16']['req'].update(bind_info_global_par['live_dnssec_60_12007_16'].get('req', {}))
+    # print(len(bind_info_global['live_dnssec_60_12007_16']['req']['cd2dc34d-482a-4569-8699-789d2d5c2bdd1652082654018']))
+    # for i in bind_info_global_chi['live_dnssec_60_12007_16'].get('req', {}):
+    #     bind_info_global['live_dnssec_60_12007_16']['req'][i].extend(bind_info_global_chi['live_dnssec_60_12007_16']['req'][i])
+    # print(len(bind_info_global['live_dnssec_60_12007_16']['req']['cd2dc34d-482a-4569-8699-789d2d5c2bdd1652082654018']))
+    # json_dump(bind_info_global['live_dnssec_60_12007_16'], 'Outer_updates/temp/bind_info_global.json')
+    # json_dump(bind_info_global_par['live_dnssec_60_12007_16'], 'Outer_updates/temp/bind_info_global_par.json')
+    # json_dump(bind_info_global_chi['live_dnssec_60_12007_16'], 'Outer_updates/temp/bind_info_global_chi.json')
+
 
     print("Done with parsing bind/apache logs")
 
@@ -562,19 +562,23 @@ def master_calc():
 
         for exp_id in exp_id_list:
             try:
-                if exp_id in bind_info_global_par or exp_id in bind_info_global_chi:
-                    # bind_info_global[exp_id] = {'parent': {}, 'child': {}}
-                    # bind_info_global[exp_id]['parent'].update(bind_info_global_par[exp_id])
-                    # bind_info_global[exp_id]['child'].update(bind_info_global_chi[exp_id])
-                    bind_info_global[exp_id] = {}
-                    bind_info_global[exp_id].update(bind_info_global_par.get(exp_id, {}))
-                    bind_info_global[exp_id].update(bind_info_global_chi.get(exp_id, {}))
-                    # print(exp_id, bind_info_global[exp_id])
-                    a, b, c = parse_logs_ttl(exp_id=exp_id,
-                                          bind_info=bind_info_global[exp_id],
-                                          apache_info_one=apache_info_one_global.get(exp_id, {"req": []}),
-                                          apache_info_two=apache_info_two_global.get(exp_id, {"req": []}),
-                                          exp_threshold=exp_threshold)
+                bind_info_global[exp_id] = {"req": {}}
+                bind_info_global[exp_id]['req'].update(bind_info_global_par[exp_id].get('req', {}))
+                # print(len(bind_info_global[exp_id]['req']['cd2dc34d-482a-4569-8699-789d2d5c2bdd1652082654018']))
+                for key in bind_info_global_chi[exp_id].get('req', {}):
+                    if key in bind_info_global[exp_id]['req']:
+                        bind_info_global[exp_id]['req'][key].extend(bind_info_global_chi[exp_id]['req'][key])
+                    else:
+                        bind_info_global[exp_id]['req'][key] = bind_info_global_chi[exp_id]['req'][key]
+                
+                # bind_info_global[exp_id].update(bind_info_global_par.get(exp_id, {}))
+                # bind_info_global[exp_id].update(bind_info_global_chi.get(exp_id, {}))
+                # print(exp_id, bind_info_global[exp_id])
+                a, b, c = parse_logs_ttl(exp_id=exp_id,
+                                        bind_info=bind_info_global[exp_id],
+                                        apache_info_one=apache_info_one_global.get(exp_id, {"req": []}),
+                                        apache_info_two=apache_info_two_global.get(exp_id, {"req": []}),
+                                        exp_threshold=exp_threshold)
             except Exception as e:
                 # pp.append('master_calc {} {}'.format(e, exp_id))
                 import traceback
@@ -647,7 +651,6 @@ if __name__ == "__main__":
     validating_resolvers = set(json.load(open('Outer_updates/temp/validating-resolvers.json')))
     non_validating_resolvers = set(json.load(open('Outer_updates/temp/non-validating-resolvers.json')))
 
-    # read_bind_apache_log()
     master_calc()
     json_dump(final_dict, 'Outer_updates/temp/final_dict')
     json_dump(final_dict_elaborate, 'Outer_updates/temp/final_dict_elaborate')
