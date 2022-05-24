@@ -2,8 +2,9 @@ import datetime
 import json
 import os
 from collections import defaultdict
+import sys
 
-
+instance_id = sys.argv[1]
 def parse_bind_line_and_build_meta(line):
     l = line.strip()
     segments = l.split(" ")
@@ -39,7 +40,7 @@ def parse_bind_apache_logs(files, is_bind=True, which=1):
 
     for file in files:
         index += 1
-        # if is_bind and index == 8:
+        # if index == 8:
         #     break
         try:
             with open(file) as FileObj:
@@ -75,9 +76,14 @@ def parse_bind_apache_logs(files, is_bind=True, which=1):
 
 def parse_logs_together():
     bind_dir = BASE_URL_BIND_APACHE + 'ashiq/'
+    id = int(instance_id) - 1
+    low = 40
+    high = 60
+    print(low, high)
     bind_files = [bind_dir + f for f in os.listdir(bind_dir)
                       if os.path.isfile(os.path.join(bind_dir, f)) and
-                      '.gz' not in f]
+                      '.gz' not in f][low: high]
+    print(bind_files)
 
     apache_logs_phase_1_dir = BASE_URL_BIND_APACHE + 'apache1/'
     apache_logs_phase_1 = [apache_logs_phase_1_dir + f for f in os.listdir(apache_logs_phase_1_dir) if
@@ -123,16 +129,40 @@ def master_calc():
     print(result['172.253.10.1']['correct_apache_hit'], result['172.253.10.1']['incorrect_apache_hit'], 
     result['172.253.10.1']['correct_req'], result['172.253.10.1']['incorrect_req'])
 
-    json_dump(result, 'Outer_updates/temp/validating-resolver-stats.json')
+    json_dump(result, 'Outer_updates/temp/validating-resolver-stats')
 
 
 def json_dump(d, fn):
+    json.dump(d, open(fn + instance_id + '.json', 'w'), default=str) 
+
+
+def json_dump_regular(d, fn):
     json.dump(d, open(fn, 'w'), default=str) 
 
 
 def json_load(fn):
     return json.load(open(fn))
 
+
+def merge_validating_stats():
+    l = [1,2,3,4,5,6]
+    d = defaultdict(lambda: {})
+    for i in l:
+        result = json.load(open('Outer_updates/temp/validating-resolver-stats' + str(i) + '.json'))
+        for ip in result:
+            if ip == '45.181.48.18':
+                print(result['45.181.48.18'])
+            if ip not in d:
+                d[ip]['correct_apache_hit'] = 0
+                d[ip]['incorrect_apache_hit'] = 0
+                d[ip]['correct_req'] = 0
+                d[ip]['incorrect_req'] = 0
+            d[ip]['correct_apache_hit'] += result[ip]['correct_apache_hit']
+            d[ip]['incorrect_apache_hit'] += result[ip]['incorrect_apache_hit']
+            d[ip]['correct_req'] += result[ip]['correct_req']
+            d[ip]['incorrect_req'] += result[ip]['incorrect_req']
+    print(d['45.181.48.18'])
+    json_dump_regular(d, 'Outer_updates/temp/validating-resolver-stats.json')
 
 def parse_result():
     pct_result = defaultdict(lambda: {})
@@ -147,7 +177,7 @@ def parse_result():
         except Exception as e:
             # print(e, result[i]['incorrect_req'], result[i]['incorrect_apache_hit'])
             continue
-    json_dump(pct_result, 'Outer_updates/temp/validating-resolver-pct-stats.json')
+    json_dump_regular(pct_result, 'Outer_updates/temp/validating-resolver-pct-stats.json')
 
 
 def detect_validating_resolvers():
@@ -155,13 +185,25 @@ def detect_validating_resolvers():
     result = json.load(open('Outer_updates/temp/validating-resolver-stats.json'))
     pct_result = json.load(open('Outer_updates/temp/validating-resolver-pct-stats.json'))
     for i in pct_result:
-        if pct_result[i]['correct'] >= 0.6 and pct_result[i]['incorrect'] <= 0.3:
+        if pct_result[i]['correct'] >= 0.6 and pct_result[i]['incorrect'] <= 0.1:
             validating_resolvers.add(i)
         else:
             non_validating_resolvers.add(i)
-    print(len(result), len(pct_result), len(validating_resolvers))
-    json_dump(list(validating_resolvers), 'Outer_updates/temp/validating-resolvers.json')
-    json_dump(list(non_validating_resolvers), 'Outer_updates/temp/non-validating-resolvers.json')
+    print(len(result), len(pct_result), len(validating_resolvers), len(non_validating_resolvers))
+    resolver_to_asn = json.load(open('Outer_updates/temp/resolver-to-asn.json'))
+
+    val_res = list(validating_resolvers)
+    lum_resolvers_asn = [15169, 20473, 36692, 14061, 30607, 24940, 27725]
+    cnt, how = 0, 0
+    print(len(val_res))
+    for i in validating_resolvers:
+        if resolver_to_asn.get(i) in lum_resolvers_asn:
+            val_res.remove(i)
+            continue
+        cnt += 1
+    print(cnt, len(val_res))
+    json_dump_regular(val_res, 'Outer_updates/temp/validating-resolvers.json')
+    json_dump_regular(list(non_validating_resolvers), 'Outer_updates/temp/non-validating-resolvers.json')
         
 
 if __name__ == "__main__":
@@ -173,5 +215,6 @@ if __name__ == "__main__":
     apache_info_two_global = set()
 
     # master_calc()
+    # merge_validating_stats()
     parse_result()
     detect_validating_resolvers()

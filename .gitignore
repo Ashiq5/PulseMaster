@@ -2,3 +2,5 @@
 /db.sqlite3
 /PulseMaster/local.py
 Outer_updates/temp/*
+venv/
+openintel*/

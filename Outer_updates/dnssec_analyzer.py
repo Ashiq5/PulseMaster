@@ -68,7 +68,8 @@ def get_validating_resolver_ips(bind_info, req_id):
     resolvers = set()
     resolver_to_flag, resolver_to_timestamp = get_resolver_ips(bind_info, req_id)
     for ip in resolver_to_flag:
-        if resolver_to_flag[ip][0] and resolver_to_flag[ip][1] and ip in validating_resolvers:
+        # if resolver_to_flag[ip][0] and resolver_to_flag[ip][1] and ip in validating_resolvers:
+        if ip in validating_resolvers:
             resolvers.add(ip)
     # print('validating resolvers', len(resolvers))
     return resolvers, resolver_to_timestamp
@@ -168,9 +169,11 @@ def preprocess_live_data(data):
             js = d[k]
             req_url = js['req_url'][7:]
             req_id = str(req_url.split(".")[0])
+            exit_node_to_req_ids[js['ip_hash']].add(req_id)
             req_id_to_ip_hash[req_id] = js['ip_hash']
             phase_1 = js['host-phase-1']
             server_time_1 = js['1-time']
+            asn = js.get('asn')
             phase_2 = js.get('host-phase-2')
             if not phase_2:
                 return
@@ -195,7 +198,7 @@ def preprocess_live_data(data):
                     phase_2 = "ServFail"  # possibly for DNSSEC failure
             else:
                 server_time_2 = js['2-time']
-            ans[req_id] = (phase_1, phase_2, js['asn'], server_time_1, server_time_2)
+            ans[req_id] = (phase_1, phase_2, js['asn'], server_time_1, server_time_2, asn)
         except Exception as e:
             # print(js)
             print('preprocess_live_data', e)
@@ -213,7 +216,7 @@ def parse_bind_line_and_build_meta(line):
     qt = segments[10]
     flags = segments[11]
     meta = {"date": datetime_object, "url": url, "resolver_ip": resolver_ip, "qtype": qt, "flags": flags}
-    print(meta['qtype']) if qt == 'DNSKEY' else None
+    # print(meta['qtype']) if qt == 'DNSKEY' else None
     return meta
 
 
@@ -238,17 +241,19 @@ def parse_bind_apache_logs(exp_id_list, files, is_bind=True):
 
     for file in files:
         index += 1
-        # if index == 20:
-        #     break
+        # if index == 2:
+        #    break
         try:
             with open(file) as FileObj:
                 for line in FileObj:
                     try:
                         segments = line.strip().split(" ")
                         resolver_ip = segments[5][: segments[5].rfind("#")]
-                        qtype = segments[10]
-                        if qtype == 'DNSKEY':
-                            resolver_to_dnskey_presence[resolver_ip] = True
+                        if resolver_to_asn.get(resolver_ip) in lum_resolvers_asn:
+                            continue
+                        # qtype = segments[10]
+                        # if qtype == 'DNSKEY':
+                        #     resolver_to_dnskey_presence[resolver_ip] = True
                         if url_live not in line:
                             continue
                         is_exp_id_present, exp_id = does_exp_id_match(line, [])
@@ -263,9 +268,10 @@ def parse_bind_apache_logs(exp_id_list, files, is_bind=True):
                                 continue
                         if is_bind:
                             meta = parse_bind_line_and_build_meta(line=line)
+                            if 'D' in meta['flags']:
+                                resolver_ips_with_DO_bit.add(meta["resolver_ip"])
                         else:
-                            meta = parse_apache_line_and_build_meta(line=line)
-
+                            meta = parse_apache_line_and_build_meta(line=line)           
                         url = meta["url"]
                         is_event = is_event_log(url)
                         if is_event:
@@ -327,7 +333,7 @@ def parse_logs_together(allowed_exp_ids):
 def log_considered_resolvers(considered_resolvers, req_id, ip_hash, type_key,
                              server_time_1, server_time_2, phase1_resolver_to_timestamp,
                              phase2_resolver_to_timestamp, phase_1_apache_hit_timestamp,
-                             phase_2_apache_hit_timestamp):
+                             phase_2_apache_hit_timestamp, exit_node_asn):
     for key in considered_resolvers:
         rt1, rt2 = "N/A", "N/A"
         if key in phase1_resolver_to_timestamp:
@@ -335,14 +341,14 @@ def log_considered_resolvers(considered_resolvers, req_id, ip_hash, type_key,
         if key in phase2_resolver_to_timestamp:
             rt2 = phase2_resolver_to_timestamp[key]
         if key not in final_dict:
-            final_dict[key] = {"case1.1": 0, "case1.2": 0, "case2.1": 0, "case3": 0}
+            final_dict[key] = {"case1.1": 0, "case1.2": 0, "case2.1": 0, "case2.2": 0, "case3": 0}
         if key not in final_dict_elaborate:
-            final_dict_elaborate[key] = {"case1.1": list(), "case1.2": list(), "case2.1": list(), "case3": list()}
+            final_dict_elaborate[key] = {"case1.1": list(), "case1.2": list(), "case2.1": list(), "case2.2": list(), "case3": list()}
         final_dict[key][type_key] = 1 + final_dict[key][type_key]
         # req_id, ip_hash, st1, st2, rt1, rt2, wt1, wt2
         final_dict_elaborate[key][type_key].append((req_id, ip_hash, server_time_1, server_time_2,
                                                     rt1, rt2, phase_1_apache_hit_timestamp,
-                                                    phase_2_apache_hit_timestamp))
+                                                    phase_2_apache_hit_timestamp, exit_node_asn))
 
 
 def parse_logs_ttl(exp_id, bind_info, apache_info_one, apache_info_two, exp_threshold):
@@ -423,31 +429,31 @@ def parse_logs_ttl(exp_id, bind_info, apache_info_one, apache_info_two, exp_thre
         phase1_apache_hit_timestamp, phase2_apache_hit_timestamp = get_ip_hit_time_tuple(req_id, apache_info_curated_first, apache_info_curated_second)
         # phase1_apache_hit_timestamp, phase2_apache_hit_timestamp = None, None
 
-        server_time_1, server_time_2 = live_data[req_id][3], live_data[req_id][4]
+        server_time_1, server_time_2, exit_node_asn = live_data[req_id][3], live_data[req_id][4], live_data[req_id][5]
 
         # subcase 1.1 -> Non validating resolvers providing from cache...valid behaviour
         phase1_resolvers, phase1_resolver_to_timestamp = get_non_validating_resolver_ips(bind_info_curated_first, req_id)
         phase2_resolvers, phase2_resolver_to_timestamp = get_non_validating_resolver_ips(bind_info_curated_second, req_id)
         # print('subcase 1', phase1_resolvers, phase2_resolvers)
-        subcase1_resolvers = phase1_resolvers.intersection(phase2_resolvers)
+        subcase1_resolvers = phase1_resolvers.difference(phase2_resolvers)
 
-        log_considered_resolvers(considered_resolvers=subcase1_resolvers,
-                                 req_id=req_id,
-                                 ip_hash=req_id_to_ip_hash[req_id],
-                                 type_key="case1.1",
-                                 server_time_1=server_time_1,
-                                 server_time_2=server_time_2,
-                                 phase1_resolver_to_timestamp=phase1_resolver_to_timestamp,
-                                 phase2_resolver_to_timestamp=phase2_resolver_to_timestamp,
-                                 phase_1_apache_hit_timestamp=phase1_apache_hit_timestamp,
-                                 phase_2_apache_hit_timestamp=phase2_apache_hit_timestamp
-                                )
+        # log_considered_resolvers(considered_resolvers=subcase1_resolvers,
+        #                          req_id=req_id,
+        #                          ip_hash=req_id_to_ip_hash[req_id],
+        #                          type_key="case1.1",
+        #                          server_time_1=server_time_1,
+        #                          server_time_2=server_time_2,
+        #                          phase1_resolver_to_timestamp=phase1_resolver_to_timestamp,
+        #                          phase2_resolver_to_timestamp=phase2_resolver_to_timestamp,
+        #                          phase_1_apache_hit_timestamp=phase1_apache_hit_timestamp,
+        #                          phase_2_apache_hit_timestamp=phase2_apache_hit_timestamp
+        #                         )
 
         # subcase 1.2 -> Validating resolvers providing from cache...violation of DNSSEC
         phase1_resolvers, phase1_resolver_to_timestamp = get_validating_resolver_ips(bind_info_curated_first, req_id)
         phase2_resolvers, phase2_resolver_to_timestamp = get_validating_resolver_ips(bind_info_curated_second, req_id)
         # print('subcase 2', phase1_resolvers, phase2_resolvers)
-        subcase2_resolvers = phase1_resolvers.intersection(phase2_resolvers)
+        subcase2_resolvers = phase1_resolvers.difference(phase2_resolvers)
 
 
         log_considered_resolvers(considered_resolvers=subcase2_resolvers,
@@ -459,14 +465,15 @@ def parse_logs_ttl(exp_id, bind_info, apache_info_one, apache_info_two, exp_thre
                                  phase1_resolver_to_timestamp=phase1_resolver_to_timestamp,
                                  phase2_resolver_to_timestamp=phase2_resolver_to_timestamp,
                                  phase_1_apache_hit_timestamp=phase1_apache_hit_timestamp,
-                                 phase_2_apache_hit_timestamp=phase2_apache_hit_timestamp
+                                 phase_2_apache_hit_timestamp=phase2_apache_hit_timestamp,
+                                 exit_node_asn=exit_node_asn
                                  )
         # print('set1', subcase1_resolvers)
         # print('set2', subcase2_resolvers)
     for req_id in case_2_set:
         phase1_apache_hit_timestamp, phase2_apache_hit_timestamp = get_ip_hit_time_tuple(req_id, apache_info_curated_first, apache_info_curated_second)
         # phase1_apache_hit_timestamp, phase2_apache_hit_timestamp = None, None
-        server_time_1, server_time_2 = live_data[req_id][3], live_data[req_id][4]
+        server_time_1, server_time_2, exit_node_asn = live_data[req_id][3], live_data[req_id][4], live_data[req_id][5]
 
         # subcase 2.1 -> Validating resolvers fetching again bcs of cached signature expiry...valid behaviour
         phase1_resolvers, phase1_resolver_to_timestamp = get_validating_resolver_ips(bind_info_curated_first, req_id)
@@ -483,19 +490,38 @@ def parse_logs_ttl(exp_id, bind_info, apache_info_one, apache_info_two, exp_thre
                                  phase1_resolver_to_timestamp=phase1_resolver_to_timestamp,
                                  phase2_resolver_to_timestamp=phase2_resolver_to_timestamp,
                                  phase_1_apache_hit_timestamp=phase1_apache_hit_timestamp,
-                                 phase_2_apache_hit_timestamp=phase2_apache_hit_timestamp
+                                 phase_2_apache_hit_timestamp=phase2_apache_hit_timestamp,
+                                 exit_node_asn=exit_node_asn
                                  )
 
-        # subcase 2.2 -> new resolvers that did not appear in the first case...ignore these
+        # subcase 2.2 -> non-validating resolvers requesting again...explanation in our earlier experiment
+        phase1_resolvers, phase1_resolver_to_timestamp = get_non_validating_resolver_ips(bind_info_curated_first, req_id)
+        phase2_resolvers, phase2_resolver_to_timestamp = get_non_validating_resolver_ips(bind_info_curated_second, req_id)
+        # print('subcase 1', phase1_resolvers, phase2_resolvers)
+        subcase2_resolvers = phase1_resolvers.intersection(phase2_resolvers)
+        # log_considered_resolvers(considered_resolvers=subcase2_resolvers,
+        #                          req_id=req_id,
+        #                          ip_hash=req_id_to_ip_hash[req_id],
+        #                          type_key="case2.2",
+        #                          server_time_1=server_time_1,
+        #                          server_time_2=server_time_2,
+        #                          phase1_resolver_to_timestamp=phase1_resolver_to_timestamp,
+        #                          phase2_resolver_to_timestamp=phase2_resolver_to_timestamp,
+        #                          phase_1_apache_hit_timestamp=phase1_apache_hit_timestamp,
+        #                          phase_2_apache_hit_timestamp=phase2_apache_hit_timestamp
+        #                          )
 
+        # subcase 2.3 -> new resolvers that did not appear in the first case...ignore these
+
+        
     for req_id in case_3_set:
-        server_time_1, server_time_2 = live_data[req_id][3], live_data[req_id][4]
+        server_time_1, server_time_2, exit_node_asn = live_data[req_id][3], live_data[req_id][4], live_data[req_id][5]
         phase1_apache_hit_timestamp, phase2_apache_hit_timestamp = get_ip_hit_time_tuple(req_id, apache_info_curated_first, apache_info_curated_second)
         # phase1_apache_hit_timestamp, phase2_apache_hit_timestamp = None, None
 
         # subcase 3.1 -> No response found from validating resolvers in the 2nd request, bcs of DNSSEC signature violation...valid behaviour
         phase1_resolvers, phase1_resolver_to_timestamp = get_validating_resolver_ips(bind_info_curated_first, req_id)
-        phase2_resolvers, phase2_resolver_to_timestamp = get_all_resolver_ips(bind_info_curated_second, req_id)
+        phase2_resolvers, phase2_resolver_to_timestamp = get_validating_resolver_ips(bind_info_curated_second, req_id)
         # print('case 3', phase1_resolvers, phase2_resolvers)
         considered_resolvers = phase1_resolvers.difference(phase2_resolvers)
         # print('set1', considered_resolvers)
@@ -508,13 +534,21 @@ def parse_logs_ttl(exp_id, bind_info, apache_info_one, apache_info_two, exp_thre
                                  phase1_resolver_to_timestamp=phase1_resolver_to_timestamp,
                                  phase2_resolver_to_timestamp=phase2_resolver_to_timestamp,
                                  phase_1_apache_hit_timestamp=phase1_apache_hit_timestamp,
-                                 phase_2_apache_hit_timestamp=phase2_apache_hit_timestamp
+                                 phase_2_apache_hit_timestamp=phase2_apache_hit_timestamp,
+                                 exit_node_asn=exit_node_asn
                                  )
 
         # subcase 3.2 -> No response found bcs of proxy error/ exit node found error...skip these
 
 
     return case_1_set, case_2_set, case_3_set
+
+
+def json_dump_set(d, fn):
+    k = {}
+    for i in d:
+        k[i] = list(d[i])
+    json.dump(k, open(fn, 'w'), default=str)
 
 
 def json_dump(d, fn):
@@ -594,7 +628,7 @@ def parse_final_dict_elaborate():
     for key in final_dict_elaborate:
         # print(final_dict_elaborate[key]) if key == "41.217.232.43" else None
         if key not in result:
-            result[key] = {"case1.1": 0, "case1.2": 0, "case2.1": 0, "case3": 0}
+            result[key] = {"case1.1": 0, "case2.2": 0, "case1.2": 0, "case2.1": 0, "case3": 0}
         for case in final_dict_elaborate[key]:
             ip_hash = set()
             for item in final_dict_elaborate[key][case]:
@@ -608,27 +642,36 @@ def parse_result():
     result = json.load(open('Outer_updates/temp/result'))
     print(len(result.keys()))
     for key in result:
-        total = result[key]["case1.1"] + result[key]["case1.2"] + result[key]["case2.1"] + result[key]["case3"]
+        total = result[key]["case1.1"] + result[key]["case1.2"] + result[key]["case2.1"] + result[key]["case3"] + result[key]["case2.2"]
         if total < 10:
             continue
         pct_result[key]["total"] = total
         if key not in pct_result:
-            pct_result[key] = {"case1.1": 0, "case1.2": 0, "case2.1": 0, "case3": 0}
+            pct_result[key] = {"case1.1": 0, "case1.2": 0, "case2.1": 0, "case2.2": 0, "case3": 0}
         for case in result[key]:
             pct_result[key][case] = result[key][case] * 100 / total
     print(len(pct_result.keys()))
     json_dump(pct_result, 'Outer_updates/temp/pct_result')
 
 
-def parse_pct_result(threshold=70):
+def parse_pct_result(cache_threshold=90, other_threshold=90):
     pct_result = json.load(open('Outer_updates/temp/pct_result'))
     print(len(pct_result.keys()))
     d = defaultdict(int)
     total = 0
+    violating_resolvers, complying_resolvers = set(), set()
     for key in pct_result:
         for case in pct_result[key]:
-            if pct_result[key][case] >= threshold:
-                d[case] += 1
+            if case == "total":
+                continue
+            elif case == "case1.2" or case == "case1.1":
+                if pct_result[key][case] >= cache_threshold:
+                    d[case] += 1
+                    violating_resolvers.add(key)
+            else:
+                if pct_result[key][case] >= other_threshold:
+                    d[case] += 1
+                    complying_resolvers.add(key)
         d['total'] += 1
     print(d)
     k = {}
@@ -636,7 +679,9 @@ def parse_pct_result(threshold=70):
         k[i] = d[i] / d['total']
     print(k)
     print(len(pct_result.keys()))
-        
+    json_dump(list(violating_resolvers), 'Outer_updates/temp/violating_resolvers.json')
+    json_dump(list(complying_resolvers), 'Outer_updates/temp/complying_resolvers.json')
+ 
 
 if __name__ == "__main__":
     BASE_URL = '/home/protick/node_code/dnssec_60/'
@@ -648,12 +693,20 @@ if __name__ == "__main__":
     event_strings = ["phase1-start", "phase1-end", "sleep-end", "phase2-end"]
     req_id_to_resolvers = defaultdict(lambda: set())
     req_id_to_client_ips = defaultdict(lambda: set())
+    exit_node_to_req_ids = defaultdict(lambda: set())
+    resolver_ips_with_DO_bit = set()
     validating_resolvers = set(json.load(open('Outer_updates/temp/validating-resolvers.json')))
     non_validating_resolvers = set(json.load(open('Outer_updates/temp/non-validating-resolvers.json')))
+    lum_resolvers_asn = [15169, 20473, 36692, 14061, 30607, 24940, 27725]
+    resolver_to_asn = json.load(open('Outer_updates/temp/resolver-to-asn.json'))
 
-    master_calc()
-    json_dump(final_dict, 'Outer_updates/temp/final_dict')
-    json_dump(final_dict_elaborate, 'Outer_updates/temp/final_dict_elaborate')
+    # master_calc()
+    # json_dump(list(resolver_ips_with_DO_bit), 'Outer_updates/temp/resolver_ips_with_DO_bit')
+    # json_dump(final_dict, 'Outer_updates/temp/final_dict')
+    # json_dump(final_dict_elaborate, 'Outer_updates/temp/final_dict_elaborate')
+    # json_dump_set(req_id_to_resolvers, 'Outer_updates/temp/req_id_to_resolvers')
+    # json_dump(req_id_to_client_ips, 'Outer_updates/temp/req_id_to_client_ips')
+    # json_dump_set(exit_node_to_req_ids, 'Outer_updates/temp/exit_node_to_req_ids')
 
     parse_final_dict_elaborate()
     parse_result()
